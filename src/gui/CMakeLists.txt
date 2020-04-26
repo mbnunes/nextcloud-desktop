@@ -4,6 +4,9 @@ set(CMAKE_AUTOMOC TRUE)
 set(CMAKE_AUTOUIC TRUE)
 set(CMAKE_AUTORCC TRUE)
 
+# Fix Qt5::WebKitWidgets error
+set(NO_SHIBBOLETH 1)
+
 IF(BUILD_UPDATER)
     add_subdirectory(updater)
 endif()
