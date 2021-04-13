@@ -14,7 +14,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 # since cmake 2.4.1
 set(CMAKE_INCLUDE_DIRECTORIES_PROJECT_BEFORE ON)
 
-# Use colored output
+# Use colored-riocloud output
 # since cmake 2.4.0
 set(CMAKE_COLOR_MAKEFILE ON)
 

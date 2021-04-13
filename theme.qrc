@@ -1,33 +1,33 @@
 <RCC>
     <qresource prefix="/client">
-        <file alias="theme/colored/Nextcloud-icon-16.png">theme/colored/16-Nextcloud-icon.png</file>
-        <file alias="theme/colored/Nextcloud-icon-24.png">theme/colored/24-Nextcloud-icon.png</file>
-        <file alias="theme/colored/Nextcloud-icon-32.png">theme/colored/32-Nextcloud-icon.png</file>
-        <file alias="theme/colored/Nextcloud-icon-48.png">theme/colored/48-Nextcloud-icon.png</file>
-        <file alias="theme/colored/Nextcloud-icon-64.png">theme/colored/64-Nextcloud-icon.png</file>
-        <file alias="theme/colored/Nextcloud-icon-128.png">theme/colored/128-Nextcloud-icon.png</file>
-        <file alias="theme/colored/Nextcloud-icon-256.png">theme/colored/256-Nextcloud-icon.png</file>
-        <file alias="theme/colored/Nextcloud-icon-512.png">theme/colored/512-Nextcloud-icon.png</file>
-        <file alias="theme/colored/Nextcloud-icon-1024.png">theme/colored/1024-Nextcloud-icon.png</file>
-        <file>theme/colored/state-error-32.png</file>
-        <file>theme/colored/state-error-64.png</file>
-        <file>theme/colored/state-error-128.png</file>
-        <file>theme/colored/state-error-256.png</file>
-        <file>theme/colored/state-ok-32.png</file>
-        <file>theme/colored/state-ok-64.png</file>
-        <file>theme/colored/state-ok-128.png</file>
-        <file>theme/colored/state-ok-256.png</file>
-        <file>theme/colored/state-pause-32.png</file>
-        <file>theme/colored/state-pause-64.png</file>
-        <file>theme/colored/state-pause-128.png</file>
-        <file>theme/colored/state-pause-256.png</file>
-        <file>theme/colored/state-sync-32.png</file>
-        <file>theme/colored/state-sync-64.png</file>
-        <file>theme/colored/state-sync-128.png</file>
-        <file>theme/colored/state-sync-256.png</file>
-        <file>theme/colored/wizard_logo.png</file>
-        <file>theme/colored/wizard_logo@2x.png</file>
-        <file>theme/colored/wizard_logo.svg</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-16.png">theme/colored-riocloud/16-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-24.png">theme/colored-riocloud/24-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-32.png">theme/colored-riocloud/32-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-48.png">theme/colored-riocloud/48-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-64.png">theme/colored-riocloud/64-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-128.png">theme/colored-riocloud/128-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-256.png">theme/colored-riocloud/256-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-512.png">theme/colored-riocloud/512-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-1024.png">theme/colored-riocloud/1024-Nextcloud-icon.png</file>
+        <file>theme/colored-riocloud/state-error-32.png</file>
+        <file>theme/colored-riocloud/state-error-64.png</file>
+        <file>theme/colored-riocloud/state-error-128.png</file>
+        <file>theme/colored-riocloud/state-error-256.png</file>
+        <file>theme/colored-riocloud/state-ok-32.png</file>
+        <file>theme/colored-riocloud/state-ok-64.png</file>
+        <file>theme/colored-riocloud/state-ok-128.png</file>
+        <file>theme/colored-riocloud/state-ok-256.png</file>
+        <file>theme/colored-riocloud/state-pause-32.png</file>
+        <file>theme/colored-riocloud/state-pause-64.png</file>
+        <file>theme/colored-riocloud/state-pause-128.png</file>
+        <file>theme/colored-riocloud/state-pause-256.png</file>
+        <file>theme/colored-riocloud/state-sync-32.png</file>
+        <file>theme/colored-riocloud/state-sync-64.png</file>
+        <file>theme/colored-riocloud/state-sync-128.png</file>
+        <file>theme/colored-riocloud/state-sync-256.png</file>
+        <file>theme/colored-riocloud/wizard_logo.png</file>
+        <file>theme/colored-riocloud/wizard_logo@2x.png</file>
+        <file>theme/colored-riocloud/wizard_logo.svg</file>
         <file>theme/white/state-error-32.png</file>
         <file>theme/white/state-error-64.png</file>
         <file>theme/white/state-error-128.png</file>
@@ -60,32 +60,32 @@
         <file>theme/black/state-sync-64.png</file>
         <file>theme/black/state-sync-128.png</file>
         <file>theme/black/state-sync-256.png</file>
-        <file>theme/colored/state-error.svg</file>
-        <file>theme/colored/state-error-16.png</file>
-        <file>theme/colored/state-offline.svg</file>
-        <file>theme/colored/state-offline-16.png</file>
-        <file>theme/colored/state-offline-32.png</file>
-        <file>theme/colored/state-offline-64.png</file>
-        <file>theme/colored/state-offline-128.png</file>
-        <file>theme/colored/state-offline-256.png</file>
-        <file>theme/colored/state-ok.svg</file>
-        <file>theme/colored/state-ok-16.png</file>
-        <file>theme/colored/state-pause.svg</file>
-        <file>theme/colored/state-pause-16.png</file>
-        <file>theme/colored/state-sync.svg</file>
-        <file>theme/colored/state-sync-16.png</file>
-        <file>theme/colored/state-warning.svg</file>
-        <file>theme/colored/state-warning-16.png</file>
-        <file>theme/colored/state-warning-32.png</file>
-        <file>theme/colored/state-warning-64.png</file>
-        <file>theme/colored/state-warning-128.png</file>
-        <file>theme/colored/state-warning-256.png</file>
+        <file>theme/colored-riocloud/state-error.svg</file>
+        <file>theme/colored-riocloud/state-error-16.png</file>
+        <file>theme/colored-riocloud/state-offline.svg</file>
+        <file>theme/colored-riocloud/state-offline-16.png</file>
+        <file>theme/colored-riocloud/state-offline-32.png</file>
+        <file>theme/colored-riocloud/state-offline-64.png</file>
+        <file>theme/colored-riocloud/state-offline-128.png</file>
+        <file>theme/colored-riocloud/state-offline-256.png</file>
+        <file>theme/colored-riocloud/state-ok.svg</file>
+        <file>theme/colored-riocloud/state-ok-16.png</file>
+        <file>theme/colored-riocloud/state-pause.svg</file>
+        <file>theme/colored-riocloud/state-pause-16.png</file>
+        <file>theme/colored-riocloud/state-sync.svg</file>
+        <file>theme/colored-riocloud/state-sync-16.png</file>
+        <file>theme/colored-riocloud/state-warning.svg</file>
+        <file>theme/colored-riocloud/state-warning-16.png</file>
+        <file>theme/colored-riocloud/state-warning-32.png</file>
+        <file>theme/colored-riocloud/state-warning-64.png</file>
+        <file>theme/colored-riocloud/state-warning-128.png</file>
+        <file>theme/colored-riocloud/state-warning-256.png</file>
         <file>theme/black/folder.png</file>
         <file>theme/black/folder@2x.png</file>
         <file>theme/white/folder.png</file>
         <file>theme/white/folder@2x.png</file>
-        <file>theme/colored/folder.png</file>
-        <file>theme/colored/folder@2x.png</file>
+        <file>theme/colored-riocloud/folder.png</file>
+        <file>theme/colored-riocloud/folder@2x.png</file>
         <file>theme/black/control-next.svg</file>
         <file>theme/black/control-prev.svg</file>
         <file>theme/black/state-error.svg</file>
@@ -147,21 +147,21 @@
         <file>theme/black/wizard-talk.png</file>
         <file>theme/black/wizard-talk@2x.png</file>
         <file>theme/black/wizard-files.png</file>
-        <file>theme/colored/wizard-files.png</file>
-        <file>theme/colored/wizard-files@2x.png</file>
-        <file>theme/colored/wizard-groupware.png</file>
-        <file>theme/colored/wizard-groupware@2x.png</file>
-        <file>theme/colored/wizard-nextcloud.png</file>
-        <file>theme/colored/wizard-nextcloud@2x.png</file>
-        <file>theme/colored/wizard-talk.png</file>
-        <file>theme/colored/wizard-talk@2x.png</file>
+        <file>theme/colored-riocloud/wizard-files.png</file>
+        <file>theme/colored-riocloud/wizard-files@2x.png</file>
+        <file>theme/colored-riocloud/wizard-groupware.png</file>
+        <file>theme/colored-riocloud/wizard-groupware@2x.png</file>
+        <file>theme/colored-riocloud/wizard-nextcloud.png</file>
+        <file>theme/colored-riocloud/wizard-nextcloud@2x.png</file>
+        <file>theme/colored-riocloud/wizard-talk.png</file>
+        <file>theme/colored-riocloud/wizard-talk@2x.png</file>
         <file>theme/sync-arrow.svg</file>
         <file>theme/white/external.png</file>
         <file>theme/white/external@2x.png</file>
         <file>theme/black/external.png</file>
         <file>theme/black/external@2x.png</file>
-        <file>theme/colored/external.png</file>
-        <file>theme/colored/external@2x.png</file>
+        <file>theme/colored-riocloud/external.png</file>
+        <file>theme/colored-riocloud/external@2x.png</file>
         <file>theme/white/folder.svg</file>
         <file>theme/white/more-apps.svg</file>
         <file>theme/white/talk-app.svg</file>
@@ -187,17 +187,17 @@
         <file>theme/lock-broken.svg</file>
         <file>theme/network.svg</file>
         <file>theme/account.svg</file>
-        <file>theme/colored/add.svg</file>
-        <file>theme/colored/delete.svg</file>
-        <file>theme/colored/Nextcloud-icon.svg</file>
-        <file>theme/colored/Nextcloud-sidebar.svg</file>
+        <file>theme/colored-riocloud/add.svg</file>
+        <file>theme/colored-riocloud/delete.svg</file>
+        <file>theme/colored-riocloud/Nextcloud-icon.svg</file>
+        <file>theme/colored-riocloud/Nextcloud-sidebar.svg</file>
         <file>theme/add.svg</file>
         <file>theme/share.svg</file>
         <file>theme/reply.svg</file>
         <file>theme/magnifying-glass.svg</file>
-        <file>theme/colored/user-status-online.svg</file>
-        <file>theme/colored/user-status-invisible.svg</file>
-        <file>theme/colored/user-status-away.svg</file>
-        <file>theme/colored/user-status-dnd.svg</file>
+        <file>theme/colored-riocloud/user-status-online.svg</file>
+        <file>theme/colored-riocloud/user-status-invisible.svg</file>
+        <file>theme/colored-riocloud/user-status-away.svg</file>
+        <file>theme/colored-riocloud/user-status-dnd.svg</file>
     </qresource>
 </RCC>

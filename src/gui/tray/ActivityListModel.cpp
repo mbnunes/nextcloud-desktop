@@ -168,9 +168,9 @@ QVariant ActivityListModel::data(const QModelIndex &index, int role) const
             } else {
                 // File sync successful
                 if (a._fileAction == "file_created") {
-                    return "qrc:///client/theme/colored/add.svg";
+                    return "qrc:///client/theme/colored-riocloud/add.svg";
                 } else if (a._fileAction == "file_deleted") {
-                    return "qrc:///client/theme/colored/delete.svg";
+                    return "qrc:///client/theme/colored-riocloud/delete.svg";
                 } else {
                     return "qrc:///client/theme/change.svg";
                 }

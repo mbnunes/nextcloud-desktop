@@ -247,7 +247,7 @@ public:
      */
     virtual QString enforcedLocale() const { return QString(); }
 
-    /** colored, white or black */
+    /** colored-riocloud, white or black */
     QString systrayIconFlavor(bool mono) const;
 
 #ifndef TOKEN_AUTH_ONLY

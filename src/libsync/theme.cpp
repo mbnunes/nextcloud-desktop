@@ -186,7 +186,7 @@ QIcon Theme::themeIcon(const QString &name, bool sysTray) const
     if (sysTray) {
         flavor = systrayIconFlavor(_mono);
     } else {
-        flavor = QLatin1String("colored");
+        flavor = QLatin1String("colored-riocloud");
     }
 
     QString key = name + "," + flavor;
@@ -244,7 +244,7 @@ QIcon Theme::themeIcon(const QString &name, bool sysTray) const
 
 QString Theme::themeImagePath(const QString &name, int size, bool sysTray) const
 {
-    const auto flavor = (!isBranded() && sysTray) ? systrayIconFlavor(_mono) : QLatin1String("colored");
+    const auto flavor = (!isBranded() && sysTray) ? systrayIconFlavor(_mono) : QLatin1String("colored-riocloud");
     const auto useSvg = shouldPreferSvg();
 
     // branded client may have several sizes of the same icon
@@ -388,7 +388,7 @@ QString Theme::systrayIconFlavor(bool mono) const
     if (mono) {
         flavor = Utility::hasDarkSystray() ? QLatin1String("white") : QLatin1String("black");
     } else {
-        flavor = QLatin1String("colored");
+        flavor = QLatin1String("colored-riocloud");
     }
     return flavor;
 }
@@ -508,7 +508,7 @@ QVariant Theme::customMedia(CustomMediaType type)
         break;
     }
 
-    QString imgPath = QString::fromLatin1(":/client/theme/colored/%1.png").arg(key);
+    QString imgPath = QString::fromLatin1(":/client/theme/colored-riocloud/%1.png").arg(key);
     if (QFile::exists(imgPath)) {
         QPixmap pix(imgPath);
         if (pix.isNull()) {
@@ -579,11 +579,11 @@ QColor Theme::wizardHeaderBackgroundColor() const
 QPixmap Theme::wizardApplicationLogo() const
 {
     if (!Theme::isBranded()) {
-        return QPixmap(Theme::hidpiFileName(":/client/theme/colored/wizard-nextcloud.png"));
+        return QPixmap(Theme::hidpiFileName(":/client/theme/colored-riocloud/wizard-nextcloud.png"));
     }
 #ifdef APPLICATION_WIZARD_USE_CUSTOM_LOGO
     const auto useSvg = shouldPreferSvg();
-    const auto logoBasePath = QStringLiteral(":/client/theme/colored/wizard_logo");
+    const auto logoBasePath = QStringLiteral(":/client/theme/colored-riocloud/wizard_logo");
     if (useSvg) {
         const auto maxHeight = Theme::isHidpi() ? 200 : 100;
         const auto maxWidth = 2 * maxHeight;
@@ -603,7 +603,7 @@ QPixmap Theme::wizardHeaderLogo() const
 {
 #ifdef APPLICATION_WIZARD_USE_CUSTOM_LOGO
     const auto useSvg = shouldPreferSvg();
-    const auto logoBasePath = QStringLiteral(":/client/theme/colored/wizard_logo");
+    const auto logoBasePath = QStringLiteral(":/client/theme/colored-riocloud/wizard_logo");
     if (useSvg) {
         const auto maxHeight = 64;
         const auto maxWidth = 2 * maxHeight;

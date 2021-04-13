@@ -53,7 +53,7 @@ void Flow2AuthWidget::setLogo()
 {
     const auto backgroundColor = palette().window().color();
     const auto logoIconFileName = Theme::instance()->isBranded() ? Theme::hidpiFileName("external.png", backgroundColor)
-                                                                 : Theme::hidpiFileName(":/client/theme/colored/external.png");
+                                                                 : Theme::hidpiFileName(":/client/theme/colored-riocloud/external.png");
     _ui.logoLabel->setPixmap(logoIconFileName);
 }
 

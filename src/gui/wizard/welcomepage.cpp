@@ -56,13 +56,13 @@ void WelcomePage::styleSlideShow()
     const auto backgroundColor = palette().window().color();
 
     const auto wizardNextcloudIconFileName = theme->isBranded() ? Theme::hidpiFileName("wizard-nextcloud.png", backgroundColor)
-                                                                : Theme::hidpiFileName(":/client/theme/colored/wizard-nextcloud.png");
+                                                                : Theme::hidpiFileName(":/client/theme/colored-riocloud/wizard-nextcloud.png");
     const auto wizardFilesIconFileName = theme->isBranded() ? Theme::hidpiFileName("wizard-files.png", backgroundColor)
-                                                            : Theme::hidpiFileName(":/client/theme/colored/wizard-files.png");
+                                                            : Theme::hidpiFileName(":/client/theme/colored-riocloud/wizard-files.png");
     const auto wizardGroupwareIconFileName = theme->isBranded() ? Theme::hidpiFileName("wizard-groupware.png", backgroundColor)
-                                                                : Theme::hidpiFileName(":/client/theme/colored/wizard-groupware.png");
+                                                                : Theme::hidpiFileName(":/client/theme/colored-riocloud/wizard-groupware.png");
     const auto wizardTalkIconFileName = theme->isBranded() ? Theme::hidpiFileName("wizard-talk.png", backgroundColor)
-                                                           : Theme::hidpiFileName(":/client/theme/colored/wizard-talk.png");
+                                                           : Theme::hidpiFileName(":/client/theme/colored-riocloud/wizard-talk.png");
 
     _ui->slideShow->addSlide(wizardNextcloudIconFileName, tr("Keep your data secure and under your control"));
     _ui->slideShow->addSlide(wizardFilesIconFileName, tr("Secure collaboration & file exchange"));
