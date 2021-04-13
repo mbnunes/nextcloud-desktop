@@ -64,6 +64,10 @@ public slots:
     void slotCertificateAccepted();
     void slotStyleChanged();
 
+private slots:
+    void onResult(QNetworkReply *reply);
+    void readJsonServers(const QString &);
+
 protected slots:
     void slotUrlChanged(const QString &);
     void slotUrlEditFinished();
@@ -86,6 +90,9 @@ private:
 
     QString _oCUrl;
     QString _ocUser;
+    QString company;
+    bool _existServer = false;
+
     bool _authTypeKnown = false;
     bool _checking = false;
     DetermineAuthTypeJob::AuthType _authType = DetermineAuthTypeJob::Basic;
@@ -93,6 +100,9 @@ private:
     QProgressIndicator *_progressIndi;
     OwncloudWizard *_ocWizard;
     AddCertificateDialog *addCertDial = nullptr;
+
+    QNetworkAccessManager *_networkManager;
+
 };
 
 } // namespace OCC

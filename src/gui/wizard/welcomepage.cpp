@@ -94,6 +94,7 @@ void WelcomePage::setupLoginButton()
 
 void WelcomePage::setupCreateAccountButton()
 {
+    _ui->createAccountButton->hide();
     connect(_ui->createAccountButton, &QPushButton::clicked, this, [this](bool /*checked*/) {
         _ocWizard->setRegistration(true);
         _nextPage = WizardCommon::Page_WebView;

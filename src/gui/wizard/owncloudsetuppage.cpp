@@ -24,6 +24,9 @@
 #include <QNetworkAccessManager>
 #include <QPropertyAnimation>
 #include <QGraphicsPixmapItem>
+#include <QJsonValue>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QBuffer>
 
 #include "QProgressIndicator.h"
@@ -48,6 +51,10 @@ OwncloudSetupPage::OwncloudSetupPage(QWidget *parent)
     setupServerAddressDescriptionLabel();
 
     Theme *theme = Theme::instance();
+
+    _networkManager = new QNetworkAccessManager();
+    connect(_networkManager, &QNetworkAccessManager::finished, this, &OwncloudSetupPage::onResult);
+
     if (theme->overrideServerUrl().isEmpty()) {
         _ui.leUrl->setPostfix(theme->wizardUrlPostfix());
         _ui.leUrl->setPlaceholderText(theme->wizardUrlHint());
@@ -69,11 +76,38 @@ OwncloudSetupPage::OwncloudSetupPage(QWidget *parent)
 
     slotUrlChanged(QLatin1String("")); // don't jitter UI
     connect(_ui.leUrl, &QLineEdit::textChanged, this, &OwncloudSetupPage::slotUrlChanged);
+    //connect(_ui.leUrl, &QLineEdit::textChanged, this, &OwncloudSetupPage::readJsonServers);
     connect(_ui.leUrl, &QLineEdit::editingFinished, this, &OwncloudSetupPage::slotUrlEditFinished);
+    //connect(_ui.leUrl, &QLineEdit::editingFinished, this, &OwncloudSetupPage::readJsonServers);
+    
+    //_ui.login->hide();
 
     addCertDial = new AddCertificateDialog(this);
     connect(addCertDial, &QDialog::accepted, this, &OwncloudSetupPage::slotCertificateAccepted);
 }
+
+void OwncloudSetupPage::readJsonServers(const QString &url)
+{
+    company = url;
+    _networkManager->get(QNetworkRequest(QUrl("https://cloud.n.vialink.com.br/servers.json")));    
+}
+
+void OwncloudSetupPage::onResult(QNetworkReply *reply){
+    
+    if(!reply->error()){
+
+        QJsonDocument document = QJsonDocument::fromJson(reply->readAll());
+
+        QJsonObject root = document.object();
+        QJsonValue jv = root.value(company);
+        if(!jv.isUndefined()){
+            _ui.leUrl->setText(root.value(company).toString());
+            this->setServerUrl(root.value(company).toString());    
+            _existServer = true;        
+        }
+    }
+}
+
 
 void OwncloudSetupPage::setLogo()
 {
@@ -164,7 +198,8 @@ void OwncloudSetupPage::slotUrlChanged(const QString &url)
         }
     }
     if (newUrl != url) {
-        _ui.leUrl->setText(newUrl);
+        //_ui.leUrl->setText(newUrl);
+        this->readJsonServers(newUrl);
     }
 }
 
@@ -173,7 +208,8 @@ void OwncloudSetupPage::slotUrlEditFinished()
     QString url = _ui.leUrl->fullText();
     if (QUrl(url).isRelative() && !url.isEmpty()) {
         // no scheme defined, set one
-        url.prepend("https://");
+        //url.prepend("https://");
+        this->readJsonServers(url);
         _ui.leUrl->setFullText(url);
     }
 }
