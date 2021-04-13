@@ -55,8 +55,8 @@ void WelcomePage::styleSlideShow()
     const auto theme = Theme::instance();
     const auto backgroundColor = palette().window().color();
 
-    const auto wizardNextcloudIconFileName = theme->isBranded() ? Theme::hidpiFileName("wizard-Riocloud.png", backgroundColor)
-                                                                : Theme::hidpiFileName(":/client/theme/colored-riocloud/wizard-Riocloud.png");
+    const auto wizardNextcloudIconFileName = theme->isBranded() ? Theme::hidpiFileName("wizard-nextcloud.png", backgroundColor)
+                                                                : Theme::hidpiFileName(":/client/theme/colored-riocloud/wizard-nextcloud.png");
     const auto wizardFilesIconFileName = theme->isBranded() ? Theme::hidpiFileName("wizard-files.png", backgroundColor)
                                                             : Theme::hidpiFileName(":/client/theme/colored-riocloud/wizard-files.png");
     const auto wizardGroupwareIconFileName = theme->isBranded() ? Theme::hidpiFileName("wizard-groupware.png", backgroundColor)

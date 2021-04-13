@@ -579,7 +579,7 @@ QColor Theme::wizardHeaderBackgroundColor() const
 QPixmap Theme::wizardApplicationLogo() const
 {
     if (!Theme::isBranded()) {
-        return QPixmap(Theme::hidpiFileName(":/client/theme/colored-riocloud/wizard-Riocloud.png"));
+        return QPixmap(Theme::hidpiFileName(":/client/theme/colored-riocloud/wizard-nextcloud.png"));
     }
 #ifdef APPLICATION_WIZARD_USE_CUSTOM_LOGO
     const auto useSvg = shouldPreferSvg();

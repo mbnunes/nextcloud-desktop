@@ -1,14 +1,14 @@
 <RCC>
     <qresource prefix="/client">
-        <file alias="theme/colored-riocloud/Riocloud-icon-16.png">theme/colored-riocloud/16-Riocloud-icon.png</file>
-        <file alias="theme/colored-riocloud/Riocloud-icon-24.png">theme/colored-riocloud/24-Riocloud-icon.png</file>
-        <file alias="theme/colored-riocloud/Riocloud-icon-32.png">theme/colored-riocloud/32-Riocloud-icon.png</file>
-        <file alias="theme/colored-riocloud/Riocloud-icon-48.png">theme/colored-riocloud/48-Riocloud-icon.png</file>
-        <file alias="theme/colored-riocloud/Riocloud-icon-64.png">theme/colored-riocloud/64-Riocloud-icon.png</file>
-        <file alias="theme/colored-riocloud/Riocloud-icon-128.png">theme/colored-riocloud/128-Riocloud-icon.png</file>
-        <file alias="theme/colored-riocloud/Riocloud-icon-256.png">theme/colored-riocloud/256-Riocloud-icon.png</file>
-        <file alias="theme/colored-riocloud/Riocloud-icon-512.png">theme/colored-riocloud/512-Riocloud-icon.png</file>
-        <file alias="theme/colored-riocloud/Riocloud-icon-1024.png">theme/colored-riocloud/1024-Riocloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-16.png">theme/colored-riocloud/16-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-24.png">theme/colored-riocloud/24-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-32.png">theme/colored-riocloud/32-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-48.png">theme/colored-riocloud/48-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-64.png">theme/colored-riocloud/64-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-128.png">theme/colored-riocloud/128-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-256.png">theme/colored-riocloud/256-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-512.png">theme/colored-riocloud/512-Nextcloud-icon.png</file>
+        <file alias="theme/colored-riocloud/Nextcloud-icon-1024.png">theme/colored-riocloud/1024-Nextcloud-icon.png</file>
         <file>theme/colored-riocloud/state-error-32.png</file>
         <file>theme/colored-riocloud/state-error-64.png</file>
         <file>theme/colored-riocloud/state-error-128.png</file>
@@ -54,29 +54,29 @@
         <file>theme/colored-riocloud/wizard-files@2x.png</file>
         <file>theme/colored-riocloud/wizard-groupware.png</file>
         <file>theme/colored-riocloud/wizard-groupware@2x.png</file>
-        <file>theme/colored-riocloud/wizard-Riocloud.png</file>
-        <file>theme/colored-riocloud/wizard-Riocloud@2x.png</file>
+        <file>theme/colored-riocloud/wizard-nextcloud.png</file>
+        <file>theme/colored-riocloud/wizard-nextcloud@2x.png</file>
         <file>theme/colored-riocloud/wizard-talk.png</file>
         <file>theme/colored-riocloud/wizard-talk@2x.png</file>
         <file>theme/colored-riocloud/external.png</file>
         <file>theme/colored-riocloud/external@2x.png</file>
         <file>theme/colored-riocloud/add.svg</file>
         <file>theme/colored-riocloud/delete.svg</file>
-        <file>theme/colored-riocloud/Riocloud-icon.svg</file>
-        <file>theme/colored-riocloud/Riocloud-sidebar.svg</file>
+        <file>theme/colored-riocloud/Nextcloud-icon.svg</file>
+        <file>theme/colored-riocloud/Nextcloud-sidebar.svg</file>
         <file>theme/colored-riocloud/user-status-online.svg</file>
         <file>theme/colored-riocloud/user-status-invisible.svg</file>
         <file>theme/colored-riocloud/user-status-away.svg</file>
         <file>theme/colored-riocloud/user-status-dnd.svg</file>
-        <file alias="theme/colored-viacloud/Viacloud-icon-16.png">theme/colored-viacloud/16-Viacloud-icon.png</file>
-        <file alias="theme/colored-viacloud/Viacloud-icon-24.png">theme/colored-viacloud/24-Viacloud-icon.png</file>
-        <file alias="theme/colored-viacloud/Viacloud-icon-32.png">theme/colored-viacloud/32-Viacloud-icon.png</file>
-        <file alias="theme/colored-viacloud/Viacloud-icon-48.png">theme/colored-viacloud/48-Viacloud-icon.png</file>
-        <file alias="theme/colored-viacloud/Viacloud-icon-64.png">theme/colored-viacloud/64-Viacloud-icon.png</file>
-        <file alias="theme/colored-viacloud/Viacloud-icon-128.png">theme/colored-viacloud/128-Viacloud-icon.png</file>
-        <file alias="theme/colored-viacloud/Viacloud-icon-256.png">theme/colored-viacloud/256-Viacloud-icon.png</file>
-        <file alias="theme/colored-viacloud/Viacloud-icon-512.png">theme/colored-viacloud/512-Viacloud-icon.png</file>
-        <file alias="theme/colored-viacloud/Viacloud-icon-1024.png">theme/colored-viacloud/1024-Viacloud-icon.png</file>
+        <file alias="theme/colored-viacloud/Nextcloud-icon-16.png">theme/colored-viacloud/16-Nextcloud-icon.png</file>
+        <file alias="theme/colored-viacloud/Nextcloud-icon-24.png">theme/colored-viacloud/24-Nextcloud-icon.png</file>
+        <file alias="theme/colored-viacloud/Nextcloud-icon-32.png">theme/colored-viacloud/32-Nextcloud-icon.png</file>
+        <file alias="theme/colored-viacloud/Nextcloud-icon-48.png">theme/colored-viacloud/48-Nextcloud-icon.png</file>
+        <file alias="theme/colored-viacloud/Nextcloud-icon-64.png">theme/colored-viacloud/64-Nextcloud-icon.png</file>
+        <file alias="theme/colored-viacloud/Nextcloud-icon-128.png">theme/colored-viacloud/128-Nextcloud-icon.png</file>
+        <file alias="theme/colored-viacloud/Nextcloud-icon-256.png">theme/colored-viacloud/256-Nextcloud-icon.png</file>
+        <file alias="theme/colored-viacloud/Nextcloud-icon-512.png">theme/colored-viacloud/512-Nextcloud-icon.png</file>
+        <file alias="theme/colored-viacloud/Nextcloud-icon-1024.png">theme/colored-viacloud/1024-Nextcloud-icon.png</file>
         <file>theme/colored-viacloud/state-error-32.png</file>
         <file>theme/colored-viacloud/state-error-64.png</file>
         <file>theme/colored-viacloud/state-error-128.png</file>
@@ -122,16 +122,16 @@
         <file>theme/colored-viacloud/wizard-files@2x.png</file>
         <file>theme/colored-viacloud/wizard-groupware.png</file>
         <file>theme/colored-viacloud/wizard-groupware@2x.png</file>
-        <file>theme/colored-viacloud/wizard-Viacloud.png</file>
-        <file>theme/colored-viacloud/wizard-Viacloud@2x.png</file>
+        <file>theme/colored-viacloud/wizard-nextcloud.png</file>
+        <file>theme/colored-viacloud/wizard-nextcloud@2x.png</file>
         <file>theme/colored-viacloud/wizard-talk.png</file>
         <file>theme/colored-viacloud/wizard-talk@2x.png</file>
         <file>theme/colored-viacloud/external.png</file>
         <file>theme/colored-viacloud/external@2x.png</file>
         <file>theme/colored-viacloud/add.svg</file>
         <file>theme/colored-viacloud/delete.svg</file>
-        <file>theme/colored-viacloud/Viacloud-icon.svg</file>
-        <file>theme/colored-viacloud/Viacloud-sidebar.svg</file>
+        <file>theme/colored-viacloud/Nextcloud-icon.svg</file>
+        <file>theme/colored-viacloud/Nextcloud-sidebar.svg</file>
         <file>theme/colored-viacloud/user-status-online.svg</file>
         <file>theme/colored-viacloud/user-status-invisible.svg</file>
         <file>theme/colored-viacloud/user-status-away.svg</file>
