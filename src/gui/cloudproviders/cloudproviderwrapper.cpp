@@ -13,12 +13,10 @@
  * for more details.
  */
 
-extern "C" {
-    #include <glib.h>
-    #include <gio.h>
-    #include <cloudprovidersaccountexporter.h>
-    #include <cloudprovidersproviderexporter.h>
-}
+#include <glib.h>
+#include <gio/gio.h>
+#include <cloudprovidersaccountexporter.h>
+#include <cloudprovidersproviderexporter.h>
 
 #include "cloudproviderwrapper.h"
 #include <account.h>
@@ -38,7 +36,6 @@ CloudProviderWrapper::CloudProviderWrapper(QObject *parent, Folder *folder, int 
 {
     GMenuModel *model;
     GActionGroup *action_group;
-    _recentlyChanged = new QList<QPair<QString, QString>>();
     QString accountName = QString("Folder/%1").arg(folderId);
 
     _cloudProvider = CLOUD_PROVIDERS_PROVIDER_EXPORTER(cloudprovider);
@@ -109,11 +106,11 @@ void CloudProviderWrapper::slotUpdateProgress(const QString &folder, const Progr
         if (f) {
             QString fullPath = f->path() + '/' + progress._lastCompletedItem._file;
             if (QFile(fullPath).exists()) {
-                if (_recentlyChanged->length() > 5)
-                    _recentlyChanged->removeFirst();
-                _recentlyChanged->append(qMakePair(actionText, fullPath));
+                if (_recentlyChanged.length() > 5)
+                    _recentlyChanged.removeFirst();
+                _recentlyChanged.append(qMakePair(actionText, fullPath));
             } else {
-                _recentlyChanged->append(qMakePair(actionText, QString("")));
+                _recentlyChanged.append(qMakePair(actionText, QString("")));
             }
         }
 
@@ -124,8 +121,8 @@ void CloudProviderWrapper::slotUpdateProgress(const QString &folder, const Progr
     if (!progress._currentDiscoveredRemoteFolder.isEmpty()) {
         msg =  tr("Checking for changes in '%1'").arg(progress._currentDiscoveredRemoteFolder);
     } else if (progress.totalSize() == 0) {
-        quint64 currentFile = progress.currentFile();
-        quint64 totalFileCount = qMax(progress.totalFiles(), currentFile);
+        qint64 currentFile = progress.currentFile();
+        qint64 totalFileCount = qMax(progress.totalFiles(), currentFile);
         if (progress.trustEta()) {
             msg = tr("Syncing %1 of %2  (%3 left)")
                     .arg(currentFile)
@@ -152,9 +149,9 @@ void CloudProviderWrapper::slotUpdateProgress(const QString &folder, const Progr
             && shouldShowInRecentsMenu(progress._lastCompletedItem)) {
         GMenuItem* item;
         g_menu_remove_all (G_MENU(_recentMenu));
-        if(!_recentlyChanged->isEmpty()) {
+        if(!_recentlyChanged.isEmpty()) {
             QList<QPair<QString, QString>>::iterator i;
-            for (i = _recentlyChanged->begin(); i != _recentlyChanged->end(); i++) {
+            for (i = _recentlyChanged.begin(); i != _recentlyChanged.end(); i++) {
                 QString label = i->first;
                 QString fullPath = i->second;
                 item = menu_item_new(label, "cloudprovider.showfile");
@@ -287,7 +284,7 @@ activate_action_open (GSimpleAction *action, GVariant *parameter, gpointer user_
     }
 
     if(g_str_equal(name, "showfile")) {
-        const gchar *path = g_variant_get_string (parameter, NULL);
+        const gchar *path = g_variant_get_string(parameter, nullptr);
         g_print("showfile => %s\n", path);
         showInFileManager(QString(path));
     }

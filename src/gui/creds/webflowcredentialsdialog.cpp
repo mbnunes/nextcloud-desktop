@@ -27,19 +27,12 @@ WebFlowCredentialsDialog::WebFlowCredentialsDialog(Account *account, bool useFlo
     _layout->setSpacing(0);
     _layout->setMargin(0);
 
-    if(_useFlow2) {
-        _headerBanner = new HeaderBanner(this);
-        _layout->addWidget(_headerBanner);
-        Theme *theme = Theme::instance();
-        _headerBanner->setup(tr("Log in"), theme->wizardHeaderLogo(), theme->wizardHeaderBanner(),
-                             Qt::AutoText, QString::fromLatin1("color:#fff;"));
-    }
-
     _containerLayout = new QVBoxLayout(this);
     _containerLayout->setSpacing(spacing);
     _containerLayout->setMargin(margin);
 
     _infoLabel = new QLabel();
+    _infoLabel->setAlignment(Qt::AlignCenter);
     _containerLayout->addWidget(_infoLabel);
 
     if (_useFlow2) {
@@ -159,6 +152,7 @@ void WebFlowCredentialsDialog::slotShowSettingsDialog()
 
 void WebFlowCredentialsDialog::slotFlow2AuthResult(Flow2Auth::Result r, const QString &errorString, const QString &user, const QString &appPassword)
 {
+    Q_UNUSED(errorString)
     if(r == Flow2Auth::LoggedIn) {
         emit urlCatched(user, appPassword, QString());
     } else {

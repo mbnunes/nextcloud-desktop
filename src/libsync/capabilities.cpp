@@ -16,6 +16,7 @@
 
 #include <QVariantMap>
 #include <QLoggingCategory>
+#include <QUrl>
 
 #include <QDebug>
 
@@ -59,6 +60,11 @@ bool Capabilities::sharePublicLinkSupportsUploadOnly() const
     return _capabilities["files_sharing"].toMap()["public"].toMap()["supports_upload_only"].toBool();
 }
 
+bool Capabilities::sharePublicLinkAskOptionalPassword() const
+{
+    return _capabilities["files_sharing"].toMap()["public"].toMap()["password"].toMap()["askForOptionalPassword"].toBool();
+}
+
 bool Capabilities::sharePublicLinkEnforcePassword() const
 {
     return _capabilities["files_sharing"].toMap()["public"].toMap()["password"].toMap()["enforced"].toBool();
@@ -84,12 +90,38 @@ bool Capabilities::shareResharing() const
     return _capabilities["files_sharing"].toMap()["resharing"].toBool();
 }
 
-bool Capabilities::clientSideEncryptionAvaliable() const
+bool Capabilities::clientSideEncryptionAvailable() const
 {
     auto it = _capabilities.constFind(QStringLiteral("end-to-end-encryption"));
-    if (it != _capabilities.constEnd())
-        return (*it).toMap().value(QStringLiteral("enabled"), false).toBool();
-    return false;
+    if (it == _capabilities.constEnd()) {
+        return false;
+    }
+
+    const auto properties = (*it).toMap();
+    const auto enabled = properties.value(QStringLiteral("enabled"), false).toBool();
+    if (!enabled) {
+        return false;
+    }
+
+    const auto version = properties.value(QStringLiteral("api-version"), "1.0").toByteArray();
+    qCInfo(lcServerCapabilities) << "E2EE API version:" << version;
+    const auto splittedVersion = version.split('.');
+
+    bool ok = false;
+    const auto major = !splittedVersion.isEmpty() ? splittedVersion.at(0).toInt(&ok) : 0;
+    if (!ok) {
+        qCWarning(lcServerCapabilities) << "Didn't understand version scheme (major), E2EE disabled";
+        return false;
+    }
+
+    ok = false;
+    const auto minor = splittedVersion.size() > 1 ? splittedVersion.at(1).toInt(&ok) : 0;
+    if (!ok) {
+        qCWarning(lcServerCapabilities) << "Didn't understand version scheme (minor), E2EE disabled";
+        return false;
+    }
+
+    return major == 1 && minor >= 1;
 }
 
 bool Capabilities::notificationsAvailable() const
@@ -119,7 +151,9 @@ QList<QByteArray> Capabilities::supportedChecksumTypes() const
 
 QByteArray Capabilities::preferredUploadChecksumType() const
 {
-    return _capabilities["checksums"].toMap()["preferredUploadType"].toByteArray();
+    return qEnvironmentVariable("OWNCLOUD_CONTENT_CHECKSUM_TYPE",
+                                _capabilities.value(QStringLiteral("checksums")).toMap()
+                                .value(QStringLiteral("preferredUploadType"), QStringLiteral("SHA1")).toString()).toUtf8();
 }
 
 QByteArray Capabilities::uploadChecksumType() const
@@ -143,6 +177,41 @@ bool Capabilities::chunkingNg() const
     return _capabilities["dav"].toMap()["chunking"].toByteArray() >= "1.0";
 }
 
+bool Capabilities::userStatus() const
+{
+    return _capabilities.contains("notifications") && _capabilities["notifications"].toMap().contains("user-status");
+}
+
+PushNotificationTypes Capabilities::availablePushNotifications() const
+{
+    if (!_capabilities.contains("notify_push")) {
+        return PushNotificationType::None;
+    }
+
+    const auto types = _capabilities["notify_push"].toMap()["type"].toStringList();
+    PushNotificationTypes pushNotificationTypes;
+
+    if (types.contains("files")) {
+        pushNotificationTypes.setFlag(PushNotificationType::Files);
+    }
+
+    if (types.contains("activities")) {
+        pushNotificationTypes.setFlag(PushNotificationType::Activities);
+    }
+
+    if (types.contains("notifications")) {
+        pushNotificationTypes.setFlag(PushNotificationType::Notifications);
+    }
+
+    return pushNotificationTypes;
+}
+
+QUrl Capabilities::pushNotificationsWebSocketUrl() const
+{
+    const auto websocket = _capabilities["notify_push"].toMap()["endpoints"].toMap()["websocket"].toString();
+    return QUrl(websocket);
+}
+
 bool Capabilities::chunkingParallelUploadDisabled() const
 {
     return _capabilities["dav"].toMap()["chunkingParallelUploadDisabled"].toBool();
@@ -164,7 +233,7 @@ QList<int> Capabilities::httpErrorCodesThatResetFailingChunkedUploads() const
 
 QString Capabilities::invalidFilenameRegex() const
 {
-    return _capabilities["dav"].toMap()["invalidFilenameRegex"].toString();
+    return _capabilities[QStringLiteral("dav")].toMap()[QStringLiteral("invalidFilenameRegex")].toString();
 }
 
 bool Capabilities::uploadConflictFiles() const
@@ -174,7 +243,12 @@ bool Capabilities::uploadConflictFiles() const
     if (envIsSet)
         return envValue != 0;
 
-    return _capabilities["uploadConflictFiles"].toBool();
+    return _capabilities[QStringLiteral("uploadConflictFiles")].toBool();
+}
+
+QStringList Capabilities::blacklistedFiles() const
+{
+    return _capabilities["files"].toMap()["blacklisted_files"].toStringList();
 }
 
 /*-------------------------------------------------------------------------------------*/

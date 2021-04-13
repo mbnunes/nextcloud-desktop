@@ -48,6 +48,8 @@ void ServerNotificationHandler::slotFetchNotifications()
         this, &ServerNotificationHandler::slotNotificationsReceived);
     QObject::connect(_notificationJob.data(), &JsonApiJob::etagResponseHeaderReceived,
         this, &ServerNotificationHandler::slotEtagResponseHeaderReceived);
+    QObject::connect(_notificationJob.data(), &JsonApiJob::allowDesktopNotificationsChanged,
+            this, &ServerNotificationHandler::slotAllowDesktopNotificationsChanged);
     _notificationJob->setProperty(propertyAccountStateC, QVariant::fromValue<AccountState *>(_accountState));
     _notificationJob->addRawHeader("If-None-Match", _accountState->notificationsEtagResponseHeader());
     _notificationJob->start();
@@ -57,8 +59,16 @@ void ServerNotificationHandler::slotEtagResponseHeaderReceived(const QByteArray 
 {
     if (statusCode == successStatusCode) {
         qCWarning(lcServerNotification) << "New Notification ETag Response Header received " << value;
-        AccountState *account = qvariant_cast<AccountState *>(sender()->property(propertyAccountStateC));
+        auto *account = qvariant_cast<AccountState *>(sender()->property(propertyAccountStateC));
         account->setNotificationsEtagResponseHeader(value);
+    }
+}
+
+void ServerNotificationHandler::slotAllowDesktopNotificationsChanged(bool isAllowed)
+{
+    auto *account = qvariant_cast<AccountState *>(sender()->property(propertyAccountStateC));
+    if (account != nullptr) {
+       account->setDesktopNotificationsAllowed(isAllowed);
     }
 }
 
@@ -83,7 +93,7 @@ void ServerNotificationHandler::slotNotificationsReceived(const QJsonDocument &j
 
     auto notifies = json.object().value("ocs").toObject().value("data").toArray();
 
-    AccountState *ai = qvariant_cast<AccountState *>(sender()->property(propertyAccountStateC));
+    auto *ai = qvariant_cast<AccountState *>(sender()->property(propertyAccountStateC));
 
     ActivityList list;
 
@@ -92,7 +102,7 @@ void ServerNotificationHandler::slotNotificationsReceived(const QJsonDocument &j
         auto json = element.toObject();
         a._type = Activity::NotificationType;
         a._accName = ai->account()->displayName();
-        a._id = json.value("activity_id").toInt();
+        a._id = json.value("notification_id").toInt();
 
         //need to know, specially for remote_share
         a._objectType = json.value("object_type").toString();
@@ -103,7 +113,7 @@ void ServerNotificationHandler::slotNotificationsReceived(const QJsonDocument &j
         a._icon = json.value("icon").toString();
 
         if (!a._icon.isEmpty()) {
-            IconJob *iconJob = new IconJob(QUrl(a._icon));
+            auto *iconJob = new IconJob(QUrl(a._icon));
             iconJob->setProperty("activityId", a._id);
             connect(iconJob, &IconJob::jobFinished, this, &ServerNotificationHandler::slotIconDownloaded);
         }
@@ -128,7 +138,7 @@ void ServerNotificationHandler::slotNotificationsReceived(const QJsonDocument &j
             al._label = QUrl::fromPercentEncoding(actionJson.value("label").toString().toUtf8());
             al._link = actionJson.value("link").toString();
             al._verb = actionJson.value("type").toString().toUtf8();
-            al._isPrimary = actionJson.value("primary").toBool();
+            al._primary = actionJson.value("primary").toBool();
 
             a._links.append(al);
         }
@@ -139,7 +149,7 @@ void ServerNotificationHandler::slotNotificationsReceived(const QJsonDocument &j
         al._label = tr("Dismiss");
         al._link = Utility::concatUrlPath(ai->account()->url(), notificationsPath + "/" + QString::number(a._id)).toString();
         al._verb = "DELETE";
-        al._isPrimary = false;
+        al._primary = false;
         a._links.append(al);
 
         list.append(a);

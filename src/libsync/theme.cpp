@@ -16,6 +16,8 @@
 #include "config.h"
 #include "common/utility.h"
 #include "version.h"
+#include "configfile.h"
+#include "common/vfs.h"
 
 #include <QtCore>
 #ifndef TOKEN_AUTH_ONLY
@@ -36,6 +38,27 @@
 #undef Mirall
 #endif
 
+namespace {
+
+QUrl imagePathToUrl(const QString &imagePath)
+{
+    if (imagePath.startsWith(':')) {
+        auto url = QUrl();
+        url.setScheme(QStringLiteral("qrc"));
+        url.setPath(imagePath.mid(1));
+        return url;
+    } else {
+        return QUrl::fromLocalFile(imagePath);
+    }
+}
+
+bool shouldPreferSvg()
+{
+    return QByteArray(APPLICATION_ICON_SET).toUpper() == QByteArrayLiteral("SVG");
+}
+
+}
+
 namespace OCC {
 
 Theme *Theme::_instance = nullptr;
@@ -50,9 +73,7 @@ Theme *Theme::instance()
     return _instance;
 }
 
-Theme::~Theme()
-{
-}
+Theme::~Theme() = default;
 
 QString Theme::statusHeaderText(SyncResult::Status status) const
 {
@@ -93,6 +114,11 @@ QString Theme::statusHeaderText(SyncResult::Status status) const
     return resultStr;
 }
 
+bool Theme::isBranded() const
+{
+    return appNameGUI() != QStringLiteral("Nextcloud");
+}
+
 QString Theme::appNameGUI() const
 {
     return APPLICATION_NAME;
@@ -101,6 +127,36 @@ QString Theme::appNameGUI() const
 QString Theme::appName() const
 {
     return APPLICATION_SHORTNAME;
+}
+
+QUrl Theme::stateOnlineImageSource() const
+{
+    return imagePathToUrl(themeImagePath("state-ok"));
+}
+
+QUrl Theme::stateOfflineImageSource() const
+{
+    return imagePathToUrl(themeImagePath("state-offline", 16));
+}
+
+QUrl Theme::statusOnlineImageSource() const
+{
+    return imagePathToUrl(themeImagePath("user-status-online", 16));
+}
+
+QUrl Theme::statusDoNotDisturbImageSource() const
+{
+    return imagePathToUrl(themeImagePath("user-status-dnd", 16));
+}
+
+QUrl Theme::statusAwayImageSource() const
+{
+    return imagePathToUrl(themeImagePath("user-status-away", 16));
+}
+
+QUrl Theme::statusInvisibleImageSource() const
+{
+    return imagePathToUrl(themeImagePath("user-status-invisible", 16));
 }
 
 QString Theme::version() const
@@ -141,16 +197,29 @@ QIcon Theme::themeIcon(const QString &name, bool sysTray) const
             return cached = QIcon::fromTheme(name);
         }
 
-        QList<int> sizes;
-        sizes << 16 << 32 << 64 << 128 << 256;
-        foreach (int size, sizes) {
-            QString svgName = QString::fromLatin1(":/client/theme/%1/%2.svg").arg(flavor).arg(name);
-            QSvgRenderer renderer(svgName);
+        const auto svgName = QString::fromLatin1(":/client/theme/%1/%2.svg").arg(flavor).arg(name);
+        QSvgRenderer renderer(svgName);
+        const auto createPixmapFromSvg = [&renderer] (int size) {
             QImage img(size, size, QImage::Format_ARGB32);
             img.fill(Qt::GlobalColor::transparent);
             QPainter imgPainter(&img);
             renderer.render(&imgPainter);
-            auto px = QPixmap::fromImage(img);
+            return QPixmap::fromImage(img);
+        };
+
+        const auto loadPixmap = [flavor, name] (int size) {
+            const auto pixmapName = QString::fromLatin1(":/client/theme/%1/%2-%3.png").arg(flavor).arg(name).arg(size);
+            return QPixmap(pixmapName);
+        };
+
+        const auto useSvg = shouldPreferSvg();
+        const auto sizes = useSvg ? QVector<int>{ 16, 32, 64, 128, 256 }
+                                  : QVector<int>{ 16, 22, 32, 48, 64, 128, 256, 512, 1024 };
+        for (int size : sizes) {
+            auto px = useSvg ? createPixmapFromSvg(size) : loadPixmap(size);
+            if (px.isNull()) {
+                continue;
+            }
             // HACK, get rid of it by supporting FDO icon themes, this is really just emulating ubuntu-mono
             if (qgetenv("DESKTOP_SESSION") == "ubuntu") {
                 QBitmap mask = px.createMaskFromColor(Qt::white, Qt::MaskOutColor);
@@ -173,6 +242,36 @@ QIcon Theme::themeIcon(const QString &name, bool sysTray) const
     return cached;
 }
 
+QString Theme::themeImagePath(const QString &name, int size, bool sysTray) const
+{
+    const auto flavor = (!isBranded() && sysTray) ? systrayIconFlavor(_mono) : QLatin1String("colored");
+    const auto useSvg = shouldPreferSvg();
+
+    // branded client may have several sizes of the same icon
+    const QString filePath = (useSvg || size <= 0)
+            ? QString::fromLatin1(":/client/theme/%1/%2").arg(flavor).arg(name)
+            : QString::fromLatin1(":/client/theme/%1/%2-%3").arg(flavor).arg(name).arg(size);
+
+    const QString svgPath = filePath + ".svg";
+    if (useSvg) {
+        return svgPath;
+    }
+
+    const QString pngPath = filePath + ".png";
+    // Use the SVG as fallback if a PNG is missing so that we get a chance to display something
+    if (QFile::exists(pngPath)) {
+        return pngPath;
+    } else {
+        return svgPath;
+    }
+}
+
+bool Theme::isHidpi(QPaintDevice *dev)
+{
+    const auto devicePixelRatio = dev ? dev->devicePixelRatio() : qApp->primaryScreen()->devicePixelRatio();
+    return devicePixelRatio > 1;
+}
+
 QIcon Theme::uiThemeIcon(const QString &iconName, bool uiHasDarkBg) const
 {
     QString themeResBasePath = ":/client/theme/";
@@ -183,8 +282,7 @@ QIcon Theme::uiThemeIcon(const QString &iconName, bool uiHasDarkBg) const
 
 QString Theme::hidpiFileName(const QString &fileName, QPaintDevice *dev)
 {
-    qreal devicePixelRatio = dev ? dev->devicePixelRatio() : qApp->primaryScreen()->devicePixelRatio();
-    if (devicePixelRatio <= 1.0) {
+    if (!Theme::isHidpi(dev)) {
         return fileName;
     }
     // try to find a 2x version
@@ -201,12 +299,21 @@ QString Theme::hidpiFileName(const QString &fileName, QPaintDevice *dev)
     return fileName;
 }
 
+QString Theme::hidpiFileName(const QString &iconName, const QColor &backgroundColor, QPaintDevice *dev)
+{
+    const auto isDarkBackground = Theme::isDarkColor(backgroundColor);
+
+    const QString themeResBasePath = ":/client/theme/";
+    const QString iconPath = themeResBasePath + (isDarkBackground ? "white/" : "black/") + iconName;
+
+    return Theme::hidpiFileName(iconPath, dev);
+}
+
 
 #endif
 
 Theme::Theme()
     : QObject(nullptr)
-    , _mono(false)
 {
 }
 
@@ -252,6 +359,15 @@ QString Theme::overrideServerUrl() const
     return QString::fromLatin1(APPLICATION_SERVER_URL);
 #else
     return QString();
+#endif
+}
+
+bool Theme::forceOverrideServerUrl() const
+{
+#ifdef APPLICATION_SERVER_URL_ENFORCE
+    return true;
+#else
+    return false;
 #endif
 }
 
@@ -349,6 +465,9 @@ QString Theme::about() const
     devString += tr("<p>Version %1. For more information please click <a href='%2'>here</a>.</p>")
               .arg(QString::fromLatin1(MIRALL_STRINGIFY(MIRALL_VERSION)) + QString(" (%1)").arg(osName))
               .arg(helpUrl());
+
+    devString += QString("<p><small>Using virtual files plugin: %1</small></p>")
+        .arg(Vfs::modeToString(bestAvailableVfsMode()));
 
     return devString;
 }
@@ -449,18 +568,51 @@ QIcon Theme::folderOfflineIcon(bool sysTray) const
 
 QColor Theme::wizardHeaderTitleColor() const
 {
-    return QColor(APPLICATION_WIZARD_HEADER_TITLE_COLOR);
+    return {APPLICATION_WIZARD_HEADER_TITLE_COLOR};
 }
 
 QColor Theme::wizardHeaderBackgroundColor() const
 {
-    return QColor(APPLICATION_WIZARD_HEADER_BACKGROUND_COLOR);
+    return {APPLICATION_WIZARD_HEADER_BACKGROUND_COLOR};
+}
+
+QPixmap Theme::wizardApplicationLogo() const
+{
+    if (!Theme::isBranded()) {
+        return QPixmap(Theme::hidpiFileName(":/client/theme/colored/wizard-nextcloud.png"));
+    }
+#ifdef APPLICATION_WIZARD_USE_CUSTOM_LOGO
+    const auto useSvg = shouldPreferSvg();
+    const auto logoBasePath = QStringLiteral(":/client/theme/colored/wizard_logo");
+    if (useSvg) {
+        const auto maxHeight = Theme::isHidpi() ? 200 : 100;
+        const auto maxWidth = 2 * maxHeight;
+        const auto icon = QIcon(logoBasePath + ".svg");
+        const auto size = icon.actualSize(QSize(maxWidth, maxHeight));
+        return icon.pixmap(size);
+    } else {
+        return QPixmap(hidpiFileName(logoBasePath + ".png"));
+    }
+#else
+    const auto size = Theme::isHidpi() ?: 200 : 100;
+    return applicationIcon().pixmap(size);
+#endif
 }
 
 QPixmap Theme::wizardHeaderLogo() const
 {
 #ifdef APPLICATION_WIZARD_USE_CUSTOM_LOGO
-   return QPixmap(hidpiFileName(":/client/theme/colored/wizard_logo.png"));
+    const auto useSvg = shouldPreferSvg();
+    const auto logoBasePath = QStringLiteral(":/client/theme/colored/wizard_logo");
+    if (useSvg) {
+        const auto maxHeight = 64;
+        const auto maxWidth = 2 * maxHeight;
+        const auto icon = QIcon(logoBasePath + ".svg");
+        const auto size = icon.actualSize(QSize(maxWidth, maxHeight));
+        return icon.pixmap(size);
+    } else {
+        return QPixmap(hidpiFileName(logoBasePath + ".png"));
+    }
 #else
     return applicationIcon().pixmap(64);
 #endif
@@ -568,7 +720,10 @@ QString Theme::versionSwitchOutput() const
     stream << "Git revision " << GIT_SHA1 << endl;
 #endif
     stream << "Using Qt " << qVersion() << ", built against Qt " << QT_VERSION_STR << endl;
-    stream << "Using Qt platform plugin '" << QGuiApplication::platformName() << "'" << endl;
+
+    if(!QGuiApplication::platformName().isEmpty())
+        stream << "Using Qt platform plugin '" << QGuiApplication::platformName() << "'" << endl;
+
     stream << "Using '" << QSslSocket::sslLibraryVersionString() << "'" << endl;
     stream << "Running on " << Utility::platformName() << ", " << QSysInfo::currentCpuArchitecture() << endl;
     return helpText;
@@ -583,7 +738,7 @@ bool Theme::isDarkColor(const QColor &color)
 
 QColor Theme::getBackgroundAwareLinkColor(const QColor &backgroundColor)
 {
-    return QColor((isDarkColor(backgroundColor) ? QColor("#6193dc") : QGuiApplication::palette().color(QPalette::Link)));
+    return {(isDarkColor(backgroundColor) ? QColor("#6193dc") : QGuiApplication::palette().color(QPalette::Link))};
 }
 
 QColor Theme::getBackgroundAwareLinkColor()
@@ -658,6 +813,12 @@ QPixmap Theme::createColorAwarePixmap(const QString &name, const QPalette &palet
 QPixmap Theme::createColorAwarePixmap(const QString &name)
 {
     return createColorAwarePixmap(name, QGuiApplication::palette());
+}
+
+bool Theme::showVirtualFilesOption() const
+{
+    const auto vfsMode = bestAvailableVfsMode();
+    return ConfigFile().showExperimentalOptions() || vfsMode == Vfs::WindowsCfApi;
 }
 
 } // end namespace client

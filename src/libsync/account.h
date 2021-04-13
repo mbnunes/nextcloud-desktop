@@ -51,9 +51,10 @@ namespace OCC {
 
 class AbstractCredentials;
 class Account;
-typedef QSharedPointer<Account> AccountPtr;
+using AccountPtr = QSharedPointer<Account>;
 class AccessManager;
 class SimpleNetworkJob;
+class PushNotifications;
 
 /**
  * @brief Reimplement this to handle SSL errors from libsync
@@ -62,7 +63,7 @@ class SimpleNetworkJob;
 class AbstractSslErrorHandler
 {
 public:
-    virtual ~AbstractSslErrorHandler() {}
+    virtual ~AbstractSslErrorHandler() = default;
     virtual bool handleErrors(QList<QSslError>, const QSslConfiguration &conf, QList<QSslCertificate> *, AccountPtr) = 0;
 };
 
@@ -76,6 +77,11 @@ public:
 class OWNCLOUDSYNC_EXPORT Account : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(QString id MEMBER _id)
+    Q_PROPERTY(QString davUser MEMBER _davUser)
+    Q_PROPERTY(QString displayName MEMBER _displayName)
+    Q_PROPERTY(QUrl url MEMBER _url)
+
 public:
     static AccountPtr create();
     ~Account();
@@ -219,10 +225,6 @@ public:
      */
     bool serverVersionUnsupported() const;
 
-    // Fixed from 8.1 https://github.com/owncloud/client/issues/3730
-    /** Detects a specific bug in older server versions */
-    bool rootEtagChangesNotOnlySubFolderEtags();
-
     /** True when the server connection is using HTTP2  */
     bool isHttp2Supported() { return _http2Supported; }
     void setHttp2Supported(bool value) { _http2Supported = value; }
@@ -248,6 +250,9 @@ public:
     /// Direct Editing
     // Check for the directEditing capability
     void fetchDirectEditors(const QUrl &directEditingURL, const QString &directEditingETag);
+
+    void trySetupPushNotifications();
+    PushNotifications *pushNotifications() const;
 
 public slots:
     /// Used when forgetting credentials
@@ -277,6 +282,9 @@ signals:
 
     /// Used in RemoteWipe
     void appPasswordRetrieved(QString);
+
+    void pushNotificationsReady(Account *account);
+    void pushNotificationsDisabled(Account *account);
 
 protected Q_SLOTS:
     void slotCredentialsFetched();
@@ -330,6 +338,8 @@ private:
     // Direct Editing
     QString _lastDirectEditingETag;
 
+    PushNotifications *_pushNotifications = nullptr;
+
     /* IMPORTANT - remove later - FIXME MS@2019-12-07 -->
      * TODO: For "Log out" & "Remove account": Remove client CA certs and KEY!
      *
@@ -349,5 +359,6 @@ private:
 }
 
 Q_DECLARE_METATYPE(OCC::AccountPtr)
+Q_DECLARE_METATYPE(OCC::Account *)
 
 #endif //SERVERCONNECTION_H

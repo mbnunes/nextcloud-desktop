@@ -1,6 +1,6 @@
 /*
  * Copyright (C) by Olivier Goffart <ogoffart@woboq.com>
- * Copyright (C) by Michael Schuster <michael@nextcloud.com>
+ * Copyright (C) by Michael Schuster <michael@schuster.ms>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,6 +25,7 @@
 #include "theme.h"
 #include "networkjobs.h"
 #include "configfile.h"
+#include "guiutility.h"
 
 namespace OCC {
 
@@ -41,9 +42,7 @@ Flow2Auth::Flow2Auth(Account *account, QObject *parent)
     QObject::connect(&_pollTimer, &QTimer::timeout, this, &Flow2Auth::slotPollTimerTimeout);
 }
 
-Flow2Auth::~Flow2Auth()
-{
-}
+Flow2Auth::~Flow2Auth() = default;
 
 void Flow2Auth::start()
 {
@@ -84,6 +83,7 @@ void Flow2Auth::fetchNewToken(const TokenAction action)
     // add 'Content-Length: 0' header (see https://github.com/nextcloud/desktop/issues/1473)
     QNetworkRequest req;
     req.setHeader(QNetworkRequest::ContentLengthHeader, "0");
+    req.setHeader(QNetworkRequest::UserAgentHeader, Utility::friendlyUserAgentString());
 
     auto job = _account->sendRequest("POST", url, req);
     job->setTimeout(qMin(30 * 1000ll, job->timeoutMsec()));
@@ -147,7 +147,7 @@ void Flow2Auth::fetchNewToken(const TokenAction action)
         {
         case actionOpenBrowser:
             // Try to open Browser
-            if (!QDesktopServices::openUrl(authorisationLink())) {
+            if (!Utility::openBrowser(authorisationLink())) {
                 // We cannot open the browser, then we claim we don't support Flow2Auth.
                 // Our UI callee will ask the user to copy and open the link.
                 emit result(NotSupported);

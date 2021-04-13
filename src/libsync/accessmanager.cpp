@@ -26,6 +26,7 @@
 #include "cookiejar.h"
 #include "accessmanager.h"
 #include "common/utility.h"
+#include "httplogger.h"
 
 namespace OCC {
 
@@ -48,18 +49,6 @@ AccessManager::AccessManager(QObject *parent)
     setCookieJar(new CookieJar);
 }
 
-void AccessManager::setRawCookie(const QByteArray &rawCookie, const QUrl &url)
-{
-    QNetworkCookie cookie(rawCookie.left(rawCookie.indexOf('=')),
-        rawCookie.mid(rawCookie.indexOf('=') + 1));
-    qCDebug(lcAccessManager) << cookie.name() << cookie.value();
-    QList<QNetworkCookie> cookieList;
-    cookieList.append(cookie);
-
-    QNetworkCookieJar *jar = cookieJar();
-    jar->setCookiesFromUrl(cookieList, url);
-}
-
 static QByteArray generateRequestId()
 {
     // Use a UUID with the starting and ending curly brace removed.
@@ -71,12 +60,10 @@ QNetworkReply *AccessManager::createRequest(QNetworkAccessManager::Operation op,
 {
     QNetworkRequest newRequest(request);
 
-    if (newRequest.hasRawHeader("cookie")) {
-        // This will set the cookie into the QNetworkCookieJar which will then override the cookie header
-        setRawCookie(request.rawHeader("cookie"), request.url());
+    // Respect request specific user agent if any
+    if (!newRequest.header(QNetworkRequest::UserAgentHeader).isValid()) {
+        newRequest.setHeader(QNetworkRequest::UserAgentHeader, Utility::userAgentString());
     }
-
-    newRequest.setRawHeader(QByteArray("User-Agent"), Utility::userAgentString());
 
     // Some firewalls reject requests that have a "User-Agent" but no "Accept" header
     newRequest.setRawHeader(QByteArray("Accept"), "*/*");
@@ -95,19 +82,17 @@ QNetworkReply *AccessManager::createRequest(QNetworkAccessManager::Operation op,
 
 #if QT_VERSION >= QT_VERSION_CHECK(5, 9, 4)
     // only enable HTTP2 with Qt 5.9.4 because old Qt have too many bugs (e.g. QTBUG-64359 is fixed in >= Qt 5.9.4)
-
-    /* Disable http2 for now due to Qt bug but allow enabling it via env var, see: https://github.com/owncloud/client/pull/7620
-     *   and: https://github.com/nextcloud/desktop/pull/1806
-     * Issue: https://github.com/nextcloud/desktop/issues/1503
-     */
     if (newRequest.url().scheme() == "https") { // Not for "http": QTBUG-61397
+        // http2 seems to cause issues, as with our recommended server setup we don't support http2, disable it by default for now
         static const bool http2EnabledEnv = qEnvironmentVariableIntValue("OWNCLOUD_HTTP2_ENABLED") == 1;
 
         newRequest.setAttribute(QNetworkRequest::HTTP2AllowedAttribute, http2EnabledEnv);
     }
 #endif
 
-    return QNetworkAccessManager::createRequest(op, newRequest, outgoingData);
+    const auto reply = QNetworkAccessManager::createRequest(op, newRequest, outgoingData);
+    HttpLogger::logRequest(reply, op, outgoingData);
+    return reply;
 }
 
 } // namespace OCC

@@ -57,13 +57,15 @@ public:
     bool checkAccountExists(bool openSettings);
 
     static void raiseDialog(QWidget *raiseWidget);
-    static QSize settingsDialogSize() { return QSize(800, 500); }
+    static QSize settingsDialogSize() { return {800, 500}; }
     void setupOverlayIcons();
 #ifdef WITH_LIBCLOUDPROVIDERS
     void setupCloudProviders();
     bool cloudProviderApiAvailable();
 #endif
     void createTray();
+
+    void hideAndShowTray();
 
 signals:
     void setupProxy();
@@ -86,6 +88,7 @@ public slots:
     void slotToggleLogBrowser();
     void slotOpenOwnCloud();
     void slotOpenSettingsDialog();
+    void slotOpenMainDialog();
     void slotSettingsDialogActivated();
     void slotHelp();
     void slotOpenPath(const QString &path);
@@ -107,13 +110,9 @@ public slots:
 private slots:
     void slotLogin();
     void slotLogout();
-    void slotUnpauseAllFolders();
-    void slotPauseAllFolders();
     void slotNewAccountWizard();
 
 private:
-    void setPauseOnAllFoldersHelper(bool pause);
-
     QPointer<Systray> _tray;
     QPointer<SettingsDialog> _settingsDialog;
     QPointer<LogBrowser> _logBrowser;

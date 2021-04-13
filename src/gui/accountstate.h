@@ -21,6 +21,7 @@
 #include <QPointer>
 #include "connectionvalidator.h"
 #include "creds/abstractcredentials.h"
+#include "userstatus.h"
 #include <memory>
 
 class QSettings;
@@ -32,8 +33,8 @@ class Account;
 class AccountApp;
 class RemoteWipe;
 
-typedef QExplicitlySharedDataPointer<AccountState> AccountStatePtr;
-typedef QList<AccountApp*> AccountAppList;
+using AccountStatePtr = QExplicitlySharedDataPointer<AccountState>;
+using AccountAppList = QList<AccountApp *>;
 
 /**
  * @brief Extra info about an ownCloud server account.
@@ -42,6 +43,8 @@ typedef QList<AccountApp*> AccountAppList;
 class AccountState : public QObject, public QSharedData
 {
     Q_OBJECT
+    Q_PROPERTY(AccountPtr account MEMBER _account)
+
 public:
     enum State {
         /// Not even attempting to connect, most likely because the
@@ -75,7 +78,7 @@ public:
     };
 
     /// The actual current connectivity status.
-    typedef ConnectionValidator::Status ConnectionStatus;
+    using ConnectionStatus = ConnectionValidator::Status;
 
     /// Use the account as parent
     explicit AccountState(AccountPtr account);
@@ -102,8 +105,6 @@ public:
     static QString stateString(State state);
 
     bool isSignedOut() const;
-
-    bool hasTalk() const;
 
     AccountAppList appList() const;
     AccountApp* findApp(const QString &appId) const;
@@ -136,7 +137,7 @@ public:
      *  the server to validate the connection if the last successful etag job
      *  was not so long ago.
      */
-    void tagLastSuccessfullETagRequest();
+    void tagLastSuccessfullETagRequest(const QDateTime &tp);
 
     /** Saves the ETag Response header from the last Notifications api
      * request with statusCode 200.
@@ -161,6 +162,32 @@ public:
     ///Asks for user credentials
     void handleInvalidCredentials();
 
+    /** Returns the user status (Online, Dnd, Away, Offline, Invisible)
+     *  https://gist.github.com/georgehrke/55a0412007f13be1551d1f9436a39675
+    */
+    UserStatus::Status status() const;
+
+    /** Returns the user status Message (emoji + text)
+    */
+    QString statusMessage() const;
+
+    /** Returns the user status icon url
+    */
+    QUrl statusIcon() const;
+
+    /** Returns the notifications status retrieved by the notificatons endpoint
+     *  https://github.com/nextcloud/desktop/issues/2318#issuecomment-680698429
+    */
+    bool isDesktopNotificationsAllowed() const;
+
+    /** Set desktop notifications status retrieved by the notificatons endpoint
+    */
+    void setDesktopNotificationsAllowed(bool isAllowed);
+
+    /** Fetch the user status (status, icon, message)
+    */
+    void fetchUserStatus();
+
 public slots:
     /// Triggers a ping to the server to update state and
     /// connection status and errors.
@@ -171,9 +198,10 @@ private:
     void fetchNavigationApps();
 
 signals:
-    void stateChanged(int state);
+    void stateChanged(State state);
     void isConnectedChanged();
     void hasFetchedNavigationApps();
+    void statusChanged();
 
 protected Q_SLOTS:
     void slotConnectionValidatorResult(ConnectionValidator::Status status, const QStringList &errors);
@@ -195,8 +223,7 @@ private:
     ConnectionStatus _connectionStatus;
     QStringList _connectionErrors;
     bool _waitingForNewCredentials;
-    bool _hasTalk;
-    QElapsedTimer _timeSinceLastETagCheck;
+    QDateTime _timeOfLastETagCheck;
     QPointer<ConnectionValidator> _connectionValidator;
     QByteArray _notificationsEtagResponseHeader;
     QByteArray _navigationAppsEtagResponseHeader;
@@ -224,6 +251,8 @@ private:
      */
     AccountAppList _apps;
 
+    UserStatus *_userStatus;
+    bool _isDesktopNotificationsAllowed;
 };
 
 class AccountApp : public QObject
@@ -232,7 +261,7 @@ class AccountApp : public QObject
 public:
     AccountApp(const QString &name, const QUrl &url,
         const QString &id, const QUrl &iconUrl,
-        QObject* parent = 0);
+        QObject* parent = nullptr);
 
     QString name() const;
     QUrl url() const;

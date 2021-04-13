@@ -66,17 +66,18 @@ void NavigationPaneHelper::updateCloudStorageRegistry()
     // that matches ours when we saved.
     QVector<QUuid> entriesToRemove;
 #ifdef Q_OS_WIN
-    Utility::registryWalkSubKeys(
-        HKEY_CURRENT_USER,
-        QStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Desktop\\NameSpace"),
-        [&entriesToRemove](HKEY key, const QString &subKey) {
-            QVariant appName = Utility::registryGetKeyValue(key, subKey, QStringLiteral("ApplicationName"));
-            if (appName.toString() == QLatin1String(APPLICATION_NAME)) {
-                QUuid clsid{ subKey };
-                Q_ASSERT(!clsid.isNull());
-                entriesToRemove.append(clsid);
-            }
-        });
+    QString nameSpaceKey = QStringLiteral(R"(Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace)");
+    if (Utility::registryKeyExists(HKEY_CURRENT_USER, nameSpaceKey)) {
+        Utility::registryWalkSubKeys(HKEY_CURRENT_USER, nameSpaceKey,
+            [&entriesToRemove](HKEY key, const QString &subKey) {
+                QVariant appName = Utility::registryGetKeyValue(key, subKey, QStringLiteral("ApplicationName"));
+                if (appName.toString() == QLatin1String(APPLICATION_NAME)) {
+                    QUuid clsid{ subKey };
+                    Q_ASSERT(!clsid.isNull());
+                    entriesToRemove.append(clsid);
+                }
+            });
+    }
 #endif
 
     // Only save folder entries if the option is enabled.
@@ -85,14 +86,17 @@ void NavigationPaneHelper::updateCloudStorageRegistry()
         // We currently don't distinguish between new and existing CLSIDs, if it's there we just
         // save over it. We at least need to update the tile in case we are suddently using multiple accounts.
         foreach (Folder *folder, _folderMan->map()) {
+            if (folder->vfs().mode() == Vfs::WindowsCfApi) {
+                continue;
+            }
             if (!folder->navigationPaneClsid().isNull()) {
                 // If it already exists, unmark it for removal, this is a valid sync root.
                 entriesToRemove.removeOne(folder->navigationPaneClsid());
 
                 QString clsidStr = folder->navigationPaneClsid().toString();
-                QString clsidPath = QString() % "Software\\Classes\\CLSID\\" % clsidStr;
-                QString clsidPathWow64 = QString() % "Software\\Classes\\Wow6432Node\\CLSID\\" % clsidStr;
-                QString namespacePath = QString() % "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Desktop\\NameSpace\\" % clsidStr;
+                QString clsidPath = QString() % R"(Software\Classes\CLSID\)" % clsidStr;
+                QString clsidPathWow64 = QString() % R"(Software\Classes\Wow6432Node\CLSID\)" % clsidStr;
+                QString namespacePath = QString() % R"(Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace\)" % clsidStr;
 
                 QString title = folder->shortGuiRemotePathOrAppName();
                 // Write the account name in the sidebar only when using more than one account.
@@ -138,7 +142,7 @@ void NavigationPaneHelper::updateCloudStorageRegistry()
                 // Step 11: Register your extension in the namespace root
                 Utility::registrySetKeyValue(HKEY_CURRENT_USER, namespacePath, QString(), REG_SZ, title);
                 // Step 12: Hide your extension from the Desktop
-                Utility::registrySetKeyValue(HKEY_CURRENT_USER, QStringLiteral("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\HideDesktopIcons\\NewStartPanel"), clsidStr, REG_DWORD, 0x1);
+                Utility::registrySetKeyValue(HKEY_CURRENT_USER, QStringLiteral(R"(Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel)"), clsidStr, REG_DWORD, 0x1);
 
                 // For us, to later be able to iterate and find our own namespace entries and associated CLSID.
                 // Use the macro instead of the theme to make sure it matches with the uninstaller.
@@ -157,9 +161,9 @@ void NavigationPaneHelper::updateCloudStorageRegistry()
     // Then remove anything that isn't in our folder list anymore.
     foreach (auto &clsid, entriesToRemove) {
         QString clsidStr = clsid.toString();
-        QString clsidPath = QString() % "Software\\Classes\\CLSID\\" % clsidStr;
-        QString clsidPathWow64 = QString() % "Software\\Classes\\Wow6432Node\\CLSID\\" % clsidStr;
-        QString namespacePath = QString() % "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Desktop\\NameSpace\\" % clsidStr;
+        QString clsidPath = QString() % R"(Software\Classes\CLSID\)" % clsidStr;
+        QString clsidPathWow64 = QString() % R"(Software\Classes\Wow6432Node\CLSID\)" % clsidStr;
+        QString namespacePath = QString() % R"(Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace\)" % clsidStr;
 
         qCInfo(lcNavPane) << "Explorer Cloud storage provider: now unused, removing own CLSID" << clsidStr;
 #ifdef Q_OS_WIN

@@ -1,8 +1,9 @@
 project(gui)
-find_package(Qt5 REQUIRED COMPONENTS Widgets Svg Qml Quick)
-set(CMAKE_AUTOMOC TRUE)
-set(CMAKE_AUTOUIC TRUE)
-set(CMAKE_AUTORCC TRUE)
+find_package(Qt5 REQUIRED COMPONENTS Widgets Svg Qml Quick QuickControls2)
+
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    add_definitions(-DQT_QML_DEBUG)
+endif()
 
 IF(BUILD_UPDATER)
     add_subdirectory(updater)
@@ -21,6 +22,8 @@ endif()
 
 set(client_UI_SRCS
     accountsettings.ui
+    conflictdialog.ui
+    foldercreationdialog.ui
     folderwizardsourcepage.ui
     folderwizardtargetpage.ui
     generalsettings.ui
@@ -28,7 +31,6 @@ set(client_UI_SRCS
     ignorelisteditor.ui
     ignorelisttablewidget.ui
     networksettings.ui
-    synclogdialog.ui
     settingsdialog.ui
     sharedialog.ui
     sharelinkwidget.ui
@@ -38,6 +40,7 @@ set(client_UI_SRCS
     addcertificatedialog.ui
     proxyauthdialog.ui
     mnemonicdialog.ui
+    tray/ActivityActionButton.qml
     tray/Window.qml
     tray/UserLine.qml
     wizard/flow2authwidget.ui
@@ -48,15 +51,18 @@ set(client_UI_SRCS
     wizard/owncloudsetupnocredspage.ui
     wizard/owncloudwizardresultpage.ui
     wizard/webview.ui
+    wizard/welcomepage.ui
 )
 
 set(client_SRCS
     accountmanager.cpp
     accountsettings.cpp
     application.cpp
-    clientproxy.cpp
+    conflictdialog.cpp
+    conflictsolver.cpp
     connectionvalidator.cpp
     folder.cpp
+    foldercreationdialog.cpp
     folderman.cpp
     folderstatusmodel.cpp
     folderstatusdelegate.cpp
@@ -92,12 +98,12 @@ set(client_SRCS
     systray.cpp
     thumbnailjob.cpp
     userinfo.cpp
+    userstatus.cpp
     accountstate.cpp
     addcertificatedialog.cpp
     authenticationdialog.cpp
     proxyauthhandler.cpp
     proxyauthdialog.cpp
-    synclogdialog.cpp
     tooltipupdater.cpp
     notificationconfirmjob.cpp
     guiutility.cpp
@@ -113,7 +119,6 @@ set(client_SRCS
     creds/httpcredentialsgui.cpp
     creds/oauth.cpp
     creds/flow2auth.cpp
-    creds/keychainchunk.cpp
     creds/webflowcredentials.cpp
     creds/webflowcredentialsdialog.cpp
     wizard/postfixlineedit.cpp
@@ -131,16 +136,9 @@ set(client_SRCS
     wizard/webviewpage.cpp
     wizard/webview.cpp
     wizard/slideshow.cpp
+    wizard/welcomepage.cpp
+    wizard/linklabel.cpp
 )
-
-IF(NOT NO_SHIBBOLETH)
-    list(APPEND client_SRCS
-        creds/shibbolethcredentials.cpp
-        creds/shibboleth/shibbolethwebview.cpp
-        creds/shibboleth/shibbolethuserjob.cpp
-        wizard/owncloudshibbolethcredspage.cpp
-    )
-endif()
 
 IF(BUILD_UPDATER)
     set(updater_SRCS
@@ -156,9 +154,16 @@ IF( APPLE )
     list(APPEND client_SRCS systray.mm)
 
     if(SPARKLE_FOUND AND BUILD_UPDATER)
-       # Define this, we need to check in updater.cpp
-       add_definitions( -DHAVE_SPARKLE )
-       list(APPEND updater_SRCS updater/sparkleupdater_mac.mm)
+        # Define this, we need to check in updater.cpp
+        add_definitions(-DHAVE_SPARKLE)
+        list(APPEND updater_SRCS updater/sparkleupdater_mac.mm updater/sparkleupdater.h)
+        list(APPEND updater_DEPS ${SPARKLE_LIBRARY})
+
+        # Sparkle.framework is installed from here because macdeployqt's CopyFramework breaks on this bundle
+        # as its logic is tightly tailored around Qt5 frameworks
+        install(DIRECTORY "${SPARKLE_LIBRARY}"
+                DESTINATION "${OWNCLOUD_OSX_BUNDLE}/Contents/Frameworks" USE_SOURCE_PERMISSIONS)
+
    endif()
 ENDIF()
 
@@ -187,17 +192,6 @@ else()
    list(APPEND 3rdparty_SRC ../3rdparty/qtlockedfile/qtlockedfile_win.cpp )
 endif()
 
-IF( NOT WIN32 AND NOT APPLE AND LIBCLOUDPROVIDERS_FOUND)
-    message("Building with libcloudproviderssupport")
-    add_definitions(-DWITH_LIBCLOUDPROVIDERS)
-    set(client_SRCS ${client_SRCS} cloudproviders/cloudprovidermanager.cpp)
-    set(client_SRCS ${client_SRCS} cloudproviders/cloudproviderwrapper.cpp)
-
-    include_directories(${GLib2_INCLUDE_DIRS})
-    include_directories(${GIO_INCLUDE_DIRS})
-    include_directories(${LIBCLOUDPROVIDERS_INCLUDE_DIR})
-ENDIF()
-
 find_package(Qt5LinguistTools)
 if(Qt5LinguistTools_FOUND)
     qt5_add_translation(client_I18N ${TRANSLATIONS})
@@ -218,17 +212,14 @@ set( final_src
     ${MIRALL_RC_SRC}
     ${client_SRCS}
     ${client_UI_SRCS}
-    ${client_version}
-    ${client_manifest}
     ${guiMoc}
     ${client_I18N}
     ${3rdparty_SRC}
     ${3rdparty_MOC}
 )
 
-if(QTKEYCHAIN_FOUND OR QT5KEYCHAIN_FOUND)
-    list(APPEND libsync_LINK_TARGETS ${QTKEYCHAIN_LIBRARY})
-    include_directories(${QTKEYCHAIN_INCLUDE_DIR})
+if(Qt5Keychain_FOUND)
+    list(APPEND libsync_LINK_TARGETS qt5keychain)
 endif()
 
 # add executable icon on windows and osx
@@ -249,7 +240,7 @@ if(APPLE)
     file(GLOB_RECURSE OWNCLOUD_SIDEBAR_ICONS "${theme_dir}/colored/*-${APPLICATION_ICON_NAME}-sidebar*")
     MESSAGE(STATUS "OWNCLOUD_SIDEBAR_ICONS: ${APPLICATION_ICON_NAME}: ${OWNCLOUD_SIDEBAR_ICONS}")
 endif()
-ecm_add_app_icon(final_src ICONS "${OWNCLOUD_ICONS}" SIDEBAR_ICONS "${OWNCLOUD_SIDEBAR_ICONS}" OUTFILE_BASENAME "${APPLICATION_ICON_NAME}")
+ecm_add_app_icon(APP_ICON ICONS "${OWNCLOUD_ICONS}" SIDEBAR_ICONS "${OWNCLOUD_SIDEBAR_ICONS}" OUTFILE_BASENAME "${APPLICATION_ICON_NAME}")
 
 if(UNIX AND NOT APPLE)
   set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE")
@@ -260,6 +251,39 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -L/usr/local/lib")
 endif()
+
+add_library(nextcloudCore STATIC ${final_src})
+
+target_link_libraries(nextcloudCore
+  PUBLIC
+  Qt5::Widgets
+  Qt5::GuiPrivate
+  Qt5::Svg
+  Qt5::Network
+  Qt5::Xml
+  Qt5::Qml
+  Qt5::Quick
+  Qt5::QuickControls2
+  Qt5::WebEngineWidgets
+  ${synclib_NAME}
+)
+
+set_target_properties(nextcloudCore
+  PROPERTIES
+  AUTOUIC ON
+  AUTORCC ON
+  AUTOMOC ON
+)
+
+target_include_directories(nextcloudCore
+  PUBLIC
+  ${CMAKE_SOURCE_DIR}/src/3rdparty/QProgressIndicator
+  ${CMAKE_SOURCE_DIR}/src/3rdparty/qtlockedfile
+  ${CMAKE_SOURCE_DIR}/src/3rdparty/qtsingleapplication
+  ${CMAKE_SOURCE_DIR}/src/3rdparty/kmessagewidget
+  ${CMAKE_CURRENT_BINARY_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}
+)
 
 if(NOT BUILD_OWNCLOUD_OSX_BUNDLE)
     if(NOT WIN32)
@@ -278,15 +302,13 @@ if(NOT BUILD_OWNCLOUD_OSX_BUNDLE)
     endif()
 
     # we may not add MACOSX_BUNDLE here, if not building one
-
-    # add_executable( ${APPLICATION_EXECUTABLE} main.cpp ${final_src})
-    add_executable( ${APPLICATION_EXECUTABLE} WIN32 main.cpp ${final_src})
+    add_executable(${APPLICATION_EXECUTABLE} WIN32 main.cpp ${client_version} ${client_manifest} ${APP_ICON})
 else()
     # set(CMAKE_INSTALL_PREFIX ".") # Examples use /Applications. hurmpf.
     set(MACOSX_BUNDLE_ICON_FILE "${APPLICATION_ICON_NAME}.icns")
 
     # we must add MACOSX_BUNDLE only if building a bundle
-    add_executable( ${APPLICATION_EXECUTABLE} WIN32 MACOSX_BUNDLE main.cpp ${final_src})
+    add_executable(${APPLICATION_EXECUTABLE} WIN32 MACOSX_BUNDLE main.cpp ${APP_ICON})
 
     set (QM_DIR ${OWNCLOUD_OSX_BUNDLE}/Contents/Resources/Translations)
     install(FILES ${client_I18N} DESTINATION ${QM_DIR})
@@ -305,24 +327,27 @@ endif()
 
 IF(BUILD_UPDATER)
     add_library(updater STATIC ${updater_SRCS})
-    target_link_libraries(updater ${synclib_NAME} Qt5::Widgets Qt5::Svg Qt5::Network Qt5::Xml)
+    target_link_libraries(updater ${synclib_NAME} ${updater_DEPS} Qt5::Widgets Qt5::Svg Qt5::Network Qt5::Xml)
     target_include_directories(updater PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    set_target_properties(updater PROPERTIES AUTOMOC ON)
 endif()
 
 set_target_properties( ${APPLICATION_EXECUTABLE} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY  ${BIN_OUTPUT_DIRECTORY}
 )
-# Only relevant for Linux? On OS X it by default properly checks in the bundle directory next to the exe
-set_target_properties( ${APPLICATION_EXECUTABLE} PROPERTIES
-        INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/${LIB_INSTALL_DIR}/${APPLICATION_EXECUTABLE};${CMAKE_INSTALL_RPATH}" )
 
-target_link_libraries( ${APPLICATION_EXECUTABLE} Qt5::Widgets Qt5::Svg Qt5::Network Qt5::Xml Qt5::Qml Qt5::Quick Qt5::WebEngineWidgets)
-target_link_libraries( ${APPLICATION_EXECUTABLE} ${synclib_NAME} )
+target_link_libraries(${APPLICATION_EXECUTABLE} nextcloudCore)
+
 IF(BUILD_UPDATER)
-    target_link_libraries( ${APPLICATION_EXECUTABLE} updater )
+  target_link_libraries(nextcloudCore PUBLIC updater)
 endif()
-target_link_libraries( ${APPLICATION_EXECUTABLE} ${OS_SPECIFIC_LINK_LIBRARIES} )
-IF( LIBCLOUDPROVIDERS_FOUND )
+
+target_link_libraries(nextcloudCore PUBLIC ${OS_SPECIFIC_LINK_LIBRARIES})
+
+if(TARGET PkgConfig::CLOUDPROVIDERS)
+    message("Building with libcloudproviderssupport")
+    target_sources(nextcloudCore PRIVATE cloudproviders/cloudprovidermanager.cpp cloudproviders/cloudproviderwrapper.cpp)
+
     string(TOLOWER "${APPLICATION_VENDOR}" DBUS_VENDOR)
     string(REGEX REPLACE "[^A-z0-9]" "" DBUS_VENDOR "${DBUS_VENDOR}")
     string(REGEX REPLACE "[^A-z0-9]" "" DBUS_APPLICATION_NAME "${APPLICATION_SHORTNAME}")
@@ -333,47 +358,38 @@ IF( LIBCLOUDPROVIDERS_FOUND )
     set(LIBCLOUDPROVIDERS_DBUS_OBJECT_PATH "/${DBUS_PREFIX}/${DBUS_VENDOR}/${DBUS_APPLICATION_NAME}")
 
     configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cloudproviders/cloudproviderconfig.h.in ${CMAKE_CURRENT_BINARY_DIR}/cloudproviderconfig.h)
-    target_link_libraries( ${APPLICATION_EXECUTABLE} ${GLib2_LDFLAGS} ${GIO_LDFLAGS} ${LIBCLOUDPROVIDERS_LIBRARY} )
-ENDIF()
-
-
-target_include_directories(${APPLICATION_EXECUTABLE} PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/3rdparty/QProgressIndicator
-    ${CMAKE_SOURCE_DIR}/src/3rdparty/qtlockedfile
-    ${CMAKE_SOURCE_DIR}/src/3rdparty/qtsingleapplication
-    ${CMAKE_SOURCE_DIR}/src/3rdparty/kmessagewidget
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
+    target_compile_definitions(nextcloudCore PUBLIC -DWITH_LIBCLOUDPROVIDERS)
+    target_link_libraries(nextcloudCore
+      PRIVATE
+      PkgConfig::CLOUDPROVIDERS
+      PkgConfig::GLIB2
+      PkgConfig::GIO
+    )
+endif()
 
 ## handle DBUS for Fdo notifications
 if( UNIX AND NOT APPLE )
     find_package(Qt5 COMPONENTS DBus)
-    target_link_libraries( ${APPLICATION_EXECUTABLE} Qt5::DBus)
-    target_compile_definitions(${APPLICATION_EXECUTABLE} PRIVATE "USE_FDO_NOTIFICATIONS")
+    target_link_libraries(nextcloudCore PUBLIC Qt5::DBus)
+    target_compile_definitions(nextcloudCore PUBLIC "USE_FDO_NOTIFICATIONS")
 endif()
 
 if (APPLE)
     find_package(Qt5 COMPONENTS MacExtras)
-    target_link_libraries( ${APPLICATION_EXECUTABLE} Qt5::MacExtras)
-endif()
-
-if (NOT NO_SHIBBOLETH)
-    find_package(Qt5 COMPONENTS WebKitWidgets)
-    target_link_libraries( ${APPLICATION_EXECUTABLE} Qt5::WebKitWidgets)
+    target_link_libraries(nextcloudCore PUBLIC Qt5::MacExtras)
 endif()
 
 if(WITH_CRASHREPORTER)
-    target_link_libraries(${APPLICATION_EXECUTABLE} crashreporter-handler)
+    target_link_libraries(nextcloudCore PUBLIC crashreporter-handler)
 
     if(UNIX AND NOT MAC)
         find_package(Threads REQUIRED)
-        target_link_libraries( ${APPLICATION_EXECUTABLE} ${CMAKE_THREAD_LIBS_INIT})
+        target_link_libraries(nextcloudCore PUBLIC ${CMAKE_THREAD_LIBS_INIT})
     endif()
 endif()
 
 # application.cpp still uses QDesktopServices::storageLocation
-target_compile_definitions(${APPLICATION_EXECUTABLE} PRIVATE "QT_DISABLE_DEPRECATED_BEFORE=0")
+target_compile_definitions(nextcloudCore PRIVATE "QT_DISABLE_DEPRECATED_BEFORE=0")
 
 
 install(TARGETS ${APPLICATION_EXECUTABLE}
@@ -388,18 +404,46 @@ install(TARGETS ${APPLICATION_EXECUTABLE}
 #FIXME: find a nice solution to make the second if(BUILD_OWNCLOUD_OSX_BUNDLE) unnecessary
 # currently it needs to be done because the code right above needs to be executed no matter
 # if building a bundle or not and the install_qt4_executable needs to be called afterwards
+#
+# OSX: Run macdeployqt for src/gui and for src/cmd using the -executable option
 if(BUILD_OWNCLOUD_OSX_BUNDLE AND NOT BUILD_LIBRARIES_ONLY)
-   get_target_property (QT_QMAKE_EXECUTABLE Qt5::qmake IMPORTED_LOCATION)
-   install(CODE "
-    message(STATUS \"Deploying (Qt) dependencies and fixing library paths...\")
-    execute_process(COMMAND \"${CMAKE_SOURCE_DIR}/admin/osx/macdeployqt.py\" ${CMAKE_INSTALL_PREFIX}/${OWNCLOUD_OSX_BUNDLE} ${QT_QMAKE_EXECUTABLE})
-    execute_process(COMMAND \"${CMAKE_SOURCE_DIR}/admin/osx/macdeployqt.py\" ${CMAKE_INSTALL_PREFIX}/${OWNCLOUD_OSX_BUNDLE}/Contents/Frameworks/QtWebEngineCore.framework/Helpers/QtWebEngineProcess.app ${QT_QMAKE_EXECUTABLE})
-    " COMPONENT RUNTIME)
+    get_target_property (QT_QMAKE_EXECUTABLE Qt5::qmake IMPORTED_LOCATION)
+    get_filename_component(QT_BIN_DIR "${QT_QMAKE_EXECUTABLE}" DIRECTORY)
+    find_program(MACDEPLOYQT_EXECUTABLE macdeployqt HINTS "${QT_BIN_DIR}")
+
+    set(cmd_NAME ${APPLICATION_EXECUTABLE}cmd)
+
+    if(CMAKE_BUILD_TYPE MATCHES Debug)
+        set(NO_STRIP "-no-strip")
+    else()
+        set(NO_STRIP "")
+    endif()
+
+    add_custom_command(TARGET ${APPLICATION_EXECUTABLE} POST_BUILD
+        COMMAND "${MACDEPLOYQT_EXECUTABLE}"
+        "$<TARGET_FILE_DIR:${APPLICATION_EXECUTABLE}>/../.."
+        -qmldir=${CMAKE_SOURCE_DIR}/src/gui
+        -always-overwrite
+        -executable="$<TARGET_FILE_DIR:${APPLICATION_EXECUTABLE}>/${cmd_NAME}"
+        ${NO_STRIP}
+        COMMAND "${CMAKE_COMMAND}"
+        -E rm -rf "${BIN_OUTPUT_DIRECTORY}/${OWNCLOUD_OSX_BUNDLE}/Contents/PlugIns/bearer"
+        COMMENT "Running macdeployqt..."
+    )
 endif()
 
 if(NOT BUILD_OWNCLOUD_OSX_BUNDLE AND NOT WIN32)
     configure_file(${CMAKE_SOURCE_DIR}/mirall.desktop.in
                    ${CMAKE_CURRENT_BINARY_DIR}/${LINUX_APPLICATION_ID}.desktop)
     install(FILES  ${CMAKE_CURRENT_BINARY_DIR}/${LINUX_APPLICATION_ID}.desktop DESTINATION ${DATADIR}/applications )
-endif()
 
+    configure_file(owncloud.xml.in ${APPLICATION_EXECUTABLE}.xml)
+    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${APPLICATION_EXECUTABLE}.xml DESTINATION ${DATADIR}/mime/packages )
+
+    find_package(ECM 1.2.0 CONFIG)
+    set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH} ${ECM_KDE_MODULE_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+    find_package(SharedMimeInfo)
+    if(SharedMimeInfo_FOUND)
+        update_xdg_mimetypes( ${DATADIR}/mime/packages )
+    endif(SharedMimeInfo_FOUND)
+endif()

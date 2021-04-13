@@ -78,23 +78,21 @@ signals:
     void determineAuthType(const QString &);
 
 private:
-    bool urlHasChanged();
+    void setLogo();
     void customizeStyle();
+    void setupServerAddressDescriptionLabel();
 
     Ui_OwncloudSetupPage _ui;
 
     QString _oCUrl;
     QString _ocUser;
-    bool _authTypeKnown;
-    bool _checking;
-    bool _multipleFoldersExist;
-    DetermineAuthTypeJob::AuthType _authType;
+    bool _authTypeKnown = false;
+    bool _checking = false;
+    DetermineAuthTypeJob::AuthType _authType = DetermineAuthTypeJob::Basic;
 
     QProgressIndicator *_progressIndi;
-    QButtonGroup *_selectiveSyncButtons;
-    QString _remoteFolder;
-    AddCertificateDialog *addCertDial;
     OwncloudWizard *_ocWizard;
+    AddCertificateDialog *addCertDial = nullptr;
 };
 
 } // namespace OCC

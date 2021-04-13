@@ -17,6 +17,7 @@
 #include <QDir>
 #include <QUrl>
 
+#include "guiutility.h"
 #include "wizard/owncloudwizardresultpage.h"
 #include "wizard/owncloudwizardcommon.h"
 #include "theme.h"
@@ -25,10 +26,6 @@ namespace OCC {
 
 OwncloudWizardResultPage::OwncloudWizardResultPage()
     : QWizardPage()
-    , _localFolder()
-    , _remoteFolder()
-    , _complete(false)
-    , _ui()
 {
     _ui.setupUi(this);
     // no fields to register.
@@ -54,9 +51,7 @@ OwncloudWizardResultPage::OwncloudWizardResultPage()
     setupCustomization();
 }
 
-OwncloudWizardResultPage::~OwncloudWizardResultPage()
-{
-}
+OwncloudWizardResultPage::~OwncloudWizardResultPage() = default;
 
 void OwncloudWizardResultPage::setComplete(bool complete)
 {
@@ -99,7 +94,7 @@ void OwncloudWizardResultPage::slotOpenServer()
 {
     Theme *theme = Theme::instance();
     QUrl url = QUrl(field("OCUrl").toString() + theme->wizardUrlPostfix());
-    QDesktopServices::openUrl(url);
+    Utility::openBrowser(url);
 }
 
 } // namespace OCC

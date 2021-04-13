@@ -20,6 +20,8 @@
 #include "creds/abstractcredentials.h"
 #include "capabilities.h"
 #include "theme.h"
+#include "pushnotifications.h"
+#include "version.h"
 
 #include "common/asserts.h"
 #include "clientsideencryption.h"
@@ -29,6 +31,7 @@
 #include <QNetworkAccessManager>
 #include <QSslSocket>
 #include <QNetworkCookieJar>
+#include <QNetworkProxy>
 
 #include <QFileInfo>
 #include <QDir>
@@ -39,7 +42,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 
-#include <keychain.h>
+#include <qt5keychain/keychain.h>
 #include "creds/abstractcredentials.h"
 
 using namespace QKeychain;
@@ -55,17 +58,13 @@ Account::Account(QObject *parent)
     , _davPath(Theme::instance()->webDavPath())
 {
     qRegisterMetaType<AccountPtr>("AccountPtr");
+    qRegisterMetaType<Account *>("Account*");
 }
 
 AccountPtr Account::create()
 {
     AccountPtr acc = AccountPtr(new Account);
     acc->setSharedThis(acc);
-
-        //TODO: This probably needs to have a better
-        // coupling, but it should work for now.
-        acc->e2e()->setAccount(acc);
-
     return acc;
 }
 
@@ -75,9 +74,7 @@ ClientSideEncryption* Account::e2e()
     return &_e2e;
 }
 
-Account::~Account()
-{
-}
+Account::~Account() = default;
 
 QString Account::davPath() const
 {
@@ -112,7 +109,10 @@ QString Account::davUser() const
 
 void Account::setDavUser(const QString &newDavUser)
 {
+    if (_davUser == newDavUser)
+        return;
     _davUser = newDavUser;
+    emit wantsAccountSaved(this);
 }
 
 #ifndef TOKEN_AUTH_ONLY
@@ -163,9 +163,14 @@ void Account::setCredentials(AbstractCredentials *cred)
 {
     // set active credential manager
     QNetworkCookieJar *jar = nullptr;
+    QNetworkProxy proxy;
+
     if (_am) {
         jar = _am->cookieJar();
         jar->setParent(nullptr);
+
+        // Remember proxy (issue #2108)
+        proxy = _am->proxy();
 
         _am = QSharedPointer<QNetworkAccessManager>();
     }
@@ -183,6 +188,9 @@ void Account::setCredentials(AbstractCredentials *cred)
     if (jar) {
         _am->setCookieJar(jar);
     }
+    if (proxy.type() != QNetworkProxy::DefaultProxy) {
+        _am->setProxy(proxy);
+    }
     connect(_am.data(), SIGNAL(sslErrors(QNetworkReply *, QList<QSslError>)),
         SLOT(slotHandleSslErrors(QNetworkReply *, QList<QSslError>)));
     connect(_am.data(), &QNetworkAccessManager::proxyAuthenticationRequired,
@@ -191,6 +199,37 @@ void Account::setCredentials(AbstractCredentials *cred)
         this, &Account::slotCredentialsFetched);
     connect(_credentials.data(), &AbstractCredentials::asked,
         this, &Account::slotCredentialsAsked);
+
+    trySetupPushNotifications();
+}
+
+void Account::trySetupPushNotifications()
+{
+    if (_capabilities.availablePushNotifications() != PushNotificationType::None) {
+        qCInfo(lcAccount) << "Try to setup push notifications";
+
+        if (!_pushNotifications) {
+            _pushNotifications = new PushNotifications(this, this);
+
+            connect(_pushNotifications, &PushNotifications::ready, this, [this]() { emit pushNotificationsReady(this); });
+
+            const auto deletePushNotifications = [this]() {
+                qCInfo(lcAccount) << "Delete push notifications object because authentication failed or connection lost";
+                if (!_pushNotifications) {
+                    return;
+                }
+                Q_ASSERT(!_pushNotifications->isReady());
+                _pushNotifications->deleteLater();
+                _pushNotifications = nullptr;
+                emit pushNotificationsDisabled(this);
+            };
+
+            connect(_pushNotifications, &PushNotifications::connectionLost, this, deletePushNotifications);
+            connect(_pushNotifications, &PushNotifications::authenticationFailed, this, deletePushNotifications);
+        }
+        // If push notifications already running it is no problem to call setup again
+        _pushNotifications->setup();
+    }
 }
 
 QUrl Account::davUrl() const
@@ -239,12 +278,15 @@ void Account::resetNetworkAccessManager()
 
     qCDebug(lcAccount) << "Resetting QNAM";
     QNetworkCookieJar *jar = _am->cookieJar();
+    QNetworkProxy proxy = _am->proxy();
 
     // Use a QSharedPointer to allow locking the life of the QNAM on the stack.
     // Make it call deleteLater to make sure that we can return to any QNAM stack frames safely.
     _am = QSharedPointer<QNetworkAccessManager>(_credentials->createQNAM(), &QObject::deleteLater);
 
     _am->setCookieJar(jar); // takes ownership of the old cookie jar
+    _am->setProxy(proxy);   // Remember proxy (issue #2108)
+
     connect(_am.data(), SIGNAL(sslErrors(QNetworkReply *, QList<QSslError>)),
         SLOT(slotHandleSslErrors(QNetworkReply *, QList<QSslError>)));
     connect(_am.data(), &QNetworkAccessManager::proxyAuthenticationRequired,
@@ -281,7 +323,7 @@ QNetworkReply *Account::sendRawRequest(const QByteArray &verb, const QUrl &url, 
 
 SimpleNetworkJob *Account::sendRequest(const QByteArray &verb, const QUrl &url, QNetworkRequest req, QIODevice *data)
 {
-    auto job = new SimpleNetworkJob(sharedFromThis(), this);
+    auto job = new SimpleNetworkJob(sharedFromThis());
     job->startRequest(verb, url, req, data);
     return job;
 }
@@ -314,6 +356,7 @@ QSslConfiguration Account::getOrCreateSslConfig()
 void Account::setApprovedCerts(const QList<QSslCertificate> certs)
 {
     _approvedCerts = certs;
+    QSslSocket::addDefaultCaCertificates(certs);
 }
 
 void Account::addApprovedCerts(const QList<QSslCertificate> certs)
@@ -346,9 +389,9 @@ QVariant Account::credentialSetting(const QString &key) const
 {
     if (_credentials) {
         QString prefix = _credentials->authType();
-        QString value = _settingsMap.value(prefix + "_" + key).toString();
-        if (value.isEmpty()) {
-            value = _settingsMap.value(key).toString();
+        QVariant value = _settingsMap.value(prefix + "_" + key);
+        if (value.isNull()) {
+            value = _settingsMap.value(key);
         }
         return value;
     }
@@ -404,11 +447,14 @@ void Account::slotHandleSslErrors(QNetworkReply *reply, QList<QSslError> errors)
         if (!guard)
             return;
 
-        QSslSocket::addDefaultCaCertificates(approvedCerts);
-        addApprovedCerts(approvedCerts);
-        emit wantsAccountSaved(this);
-        // all ssl certs are known and accepted. We can ignore the problems right away.
-        qCInfo(lcAccount) << out << "Certs are known and trusted! This is not an actual error.";
+        if (!approvedCerts.isEmpty()) {
+            QSslSocket::addDefaultCaCertificates(approvedCerts);
+            addApprovedCerts(approvedCerts);
+            emit wantsAccountSaved(this);
+
+            // all ssl certs are known and accepted. We can ignore the problems right away.
+            qCInfo(lcAccount) << out << "Certs are known and trusted! This is not an actual error.";
+        }
 
         // Warning: Do *not* use ignoreSslErrors() (without args) here:
         // it permanently ignores all SSL errors for this host, even
@@ -461,6 +507,8 @@ const Capabilities &Account::capabilities() const
 void Account::setCapabilities(const QVariantMap &caps)
 {
     _capabilities = Capabilities(caps);
+
+    trySetupPushNotifications();
 }
 
 QString Account::serverVersion() const
@@ -488,7 +536,8 @@ bool Account::serverVersionUnsupported() const
         // not detected yet, assume it is fine.
         return false;
     }
-    return serverVersionInt() < makeServerVersion(9, 1, 0);
+    return serverVersionInt() < makeServerVersion(NEXTCLOUD_SERVER_VERSION_MIN_SUPPORTED_MAJOR,
+               NEXTCLOUD_SERVER_VERSION_MIN_SUPPORTED_MINOR, NEXTCLOUD_SERVER_VERSION_MIN_SUPPORTED_PATCH);
 }
 
 void Account::setServerVersion(const QString &version)
@@ -500,11 +549,6 @@ void Account::setServerVersion(const QString &version)
     auto oldServerVersion = _serverVersion;
     _serverVersion = version;
     emit serverVersionChanged(this, oldServerVersion, version);
-}
-
-bool Account::rootEtagChangesNotOnlySubFolderEtags()
-{
-    return (serverVersionInt() >= makeServerVersion(8, 1, 0));
 }
 
 void Account::setNonShib(bool nonShib)
@@ -534,12 +578,12 @@ void Account::writeAppPasswordOnce(QString appPassword){
                 id()
     );
 
-    WritePasswordJob *job = new WritePasswordJob(Theme::instance()->appName());
+    auto *job = new WritePasswordJob(Theme::instance()->appName());
     job->setInsecureFallback(false);
     job->setKey(kck);
     job->setBinaryData(appPassword.toLatin1());
     connect(job, &WritePasswordJob::finished, [this](Job *incoming) {
-        WritePasswordJob *writeJob = static_cast<WritePasswordJob *>(incoming);
+        auto *writeJob = static_cast<WritePasswordJob *>(incoming);
         if (writeJob->error() == NoError)
             qCInfo(lcAccount) << "appPassword stored in keychain";
         else
@@ -558,11 +602,11 @@ void Account::retrieveAppPassword(){
                 id()
     );
 
-    ReadPasswordJob *job = new ReadPasswordJob(Theme::instance()->appName());
+    auto *job = new ReadPasswordJob(Theme::instance()->appName());
     job->setInsecureFallback(false);
     job->setKey(kck);
     connect(job, &ReadPasswordJob::finished, [this](Job *incoming) {
-        ReadPasswordJob *readJob = static_cast<ReadPasswordJob *>(incoming);
+        auto *readJob = static_cast<ReadPasswordJob *>(incoming);
         QString pwd("");
         // Error or no valid public key error out
         if (readJob->error() == NoError &&
@@ -587,11 +631,11 @@ void Account::deleteAppPassword(){
         return;
     }
 
-    DeletePasswordJob *job = new DeletePasswordJob(Theme::instance()->appName());
+    auto *job = new DeletePasswordJob(Theme::instance()->appName());
     job->setInsecureFallback(false);
     job->setKey(kck);
     connect(job, &DeletePasswordJob::finished, [this](Job *incoming) {
-        DeletePasswordJob *deleteJob = static_cast<DeletePasswordJob *>(incoming);
+        auto *deleteJob = static_cast<DeletePasswordJob *>(incoming);
         if (deleteJob->error() == NoError)
             qCInfo(lcAccount) << "appPassword deleted from keychain";
         else
@@ -612,7 +656,7 @@ void Account::fetchDirectEditors(const QUrl &directEditingURL, const QString &di
     if (!directEditingURL.isEmpty() &&
         (directEditingETag.isEmpty() || directEditingETag != _lastDirectEditingETag)) {
             // Fetch the available editors and their mime types
-            JsonApiJob *job = new JsonApiJob(sharedFromThis(), QLatin1String("ocs/v2.php/apps/files/api/v1/directEditing"), this);
+            auto *job = new JsonApiJob(sharedFromThis(), QLatin1String("ocs/v2.php/apps/files/api/v1/directEditing"));
             QObject::connect(job, &JsonApiJob::jsonReceived, this, &Account::slotDirectEditingRecieved);
             job->start();
     }
@@ -633,7 +677,7 @@ void Account::slotDirectEditingRecieved(const QJsonDocument &json)
             auto mimeTypes = editor.value("mimetypes").toArray();
             auto optionalMimeTypes = editor.value("optionalMimetypes").toArray();
 
-            DirectEditor *directEditor = new DirectEditor(id, name);
+            auto *directEditor = new DirectEditor(id, name);
 
             foreach(auto mimeType, mimeTypes) {
                 directEditor->addMimetype(mimeType.toString().toLatin1());
@@ -646,6 +690,11 @@ void Account::slotDirectEditingRecieved(const QJsonDocument &json)
             _capabilities.addDirectEditor(directEditor);
         }
     }
+}
+
+PushNotifications *Account::pushNotifications() const
+{
+    return _pushNotifications;
 }
 
 } // namespace OCC

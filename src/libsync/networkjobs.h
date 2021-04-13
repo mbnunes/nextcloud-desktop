@@ -18,6 +18,8 @@
 
 #include "abstractnetworkjob.h"
 
+#include "common/result.h"
+
 #include <QBuffer>
 #include <QUrlQuery>
 #include <functional>
@@ -26,6 +28,18 @@ class QUrl;
 class QJsonObject;
 
 namespace OCC {
+
+/** Strips quotes and gzip annotations */
+OWNCLOUDSYNC_EXPORT QByteArray parseEtag(const char *header);
+
+struct HttpError
+{
+    int code; // HTTP error code
+    QString message;
+};
+
+template <typename T>
+using HttpResult = Result<T, HttpError>;
 
 /**
  * @brief The EntityExistsJob class
@@ -253,6 +267,7 @@ class OWNCLOUDSYNC_EXPORT MkColJob : public AbstractNetworkJob
 
 public:
     explicit MkColJob(AccountPtr account, const QString &path, QObject *parent = nullptr);
+    explicit MkColJob(AccountPtr account, const QString &path, const QMap<QByteArray, QByteArray> &extraHeaders, QObject *parent = nullptr);
     explicit MkColJob(AccountPtr account, const QUrl &url,
         const QMap<QByteArray, QByteArray> &extraHeaders, QObject *parent = nullptr);
     void start() override;
@@ -333,7 +348,8 @@ public:
     void start() override;
 
 signals:
-    void etagRetreived(const QString &etag);
+    void etagRetrieved(const QString &etag, const QDateTime &time);
+    void finishedWithResult(const HttpResult<QString> &etag);
 
 private slots:
     bool finished() override;
@@ -404,6 +420,12 @@ signals:
      * @param statusCode - the OCS status code: 100 (!) for success
      */
     void etagResponseHeaderReceived(const QByteArray &value, int statusCode);
+    
+    /**
+     * @brief desktopNotificationStatusReceived - signal to report if notifications are allowed
+     * @param status - set desktop notifications allowed status 
+     */
+    void allowDesktopNotificationsChanged(bool isAllowed);
 
 private:
     QUrlQuery _additionalParams;
@@ -421,12 +443,13 @@ class OWNCLOUDSYNC_EXPORT DetermineAuthTypeJob : public QObject
     Q_OBJECT
 public:
     enum AuthType {
+        NoAuthType, // used only before we got a chance to probe the server
         Basic, // also the catch-all fallback for backwards compatibility reasons
         OAuth,
-        Shibboleth,
         WebViewFlow,
         LoginFlowV2
     };
+    Q_ENUM(AuthType)
 
     explicit DetermineAuthTypeJob(AccountPtr account, QObject *parent = nullptr);
     void start();
@@ -437,9 +460,9 @@ private:
     void checkAllDone();
 
     AccountPtr _account;
-    AuthType _resultGet = Basic;
-    AuthType _resultPropfind = Basic;
-    AuthType _resultOldFlow = Basic;
+    AuthType _resultGet = NoAuthType;
+    AuthType _resultPropfind = NoAuthType;
+    AuthType _resultOldFlow = NoAuthType;
     bool _getDone = false;
     bool _propfindDone = false;
     bool _oldFlowDone = false;

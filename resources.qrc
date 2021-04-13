@@ -2,7 +2,9 @@
     <qresource prefix="/qml">
         <file>src/gui/tray/Window.qml</file>
         <file>src/gui/tray/UserLine.qml</file>
+        <file>src/gui/tray/HeaderButton.qml</file>
         <file>theme/Style/Style.qml</file>
         <file>theme/Style/qmldir</file>
+        <file>src/gui/tray/ActivityActionButton.qml</file>
     </qresource>
 </RCC>

@@ -24,7 +24,6 @@
 #include "capabilities.h"
 #include "guiutility.h"
 #include "thumbnailjob.h"
-#include "sharee.h"
 #include "sharemanager.h"
 #include "theme.h"
 
@@ -46,7 +45,7 @@
 #include <QPainter>
 #include <QListWidget>
 
-#include <string.h>
+#include <cstring>
 
 namespace OCC {
 
@@ -85,6 +84,16 @@ ShareUserGroupWidget::ShareUserGroupWidget(AccountPtr account,
     _completer->setCompletionMode(QCompleter::UnfilteredPopupCompletion);
     _ui->shareeLineEdit->setCompleter(_completer);
 
+    auto searchGloballyAction = new QAction(_ui->shareeLineEdit);
+    searchGloballyAction->setIcon(QIcon(":/client/theme/magnifying-glass.svg"));
+    searchGloballyAction->setToolTip(tr("Search globally"));
+
+    connect(searchGloballyAction, &QAction::triggered, this, [this]() {
+        searchForSharees(ShareeModel::GlobalSearch);
+    });
+
+    _ui->shareeLineEdit->addAction(searchGloballyAction, QLineEdit::LeadingPosition);
+
     _manager = new ShareManager(_account, this);
     connect(_manager, &ShareManager::sharesFetched, this, &ShareUserGroupWidget::slotSharesFetched);
     connect(_manager, &ShareManager::shareCreated, this, &ShareUserGroupWidget::getShares);
@@ -104,7 +113,9 @@ ShareUserGroupWidget::ShareUserGroupWidget(AccountPtr account,
     connect(_ui->shareeLineEdit, &QLineEdit::textEdited,
         this, &ShareUserGroupWidget::slotLineEditTextEdited, Qt::QueuedConnection);
     _ui->shareeLineEdit->installEventFilter(this);
-    connect(&_completionTimer, &QTimer::timeout, this, &ShareUserGroupWidget::searchForSharees);
+    connect(&_completionTimer, &QTimer::timeout, this, [this]() {
+        searchForSharees(ShareeModel::LocalSearch);
+    });
     _completionTimer.setSingleShot(true);
     _completionTimer.setInterval(600);
 
@@ -163,9 +174,13 @@ void ShareUserGroupWidget::slotLineEditReturn()
     _completionTimer.start();
 }
 
-
-void ShareUserGroupWidget::searchForSharees()
+void ShareUserGroupWidget::searchForSharees(ShareeModel::LookupMode lookupMode)
 {
+    if (_ui->shareeLineEdit->text().isEmpty()) {
+        return;
+    }
+
+    _ui->shareeLineEdit->setEnabled(false);
     _completionTimer.stop();
     _pi_sharee.startAnimation();
     ShareeModel::ShareeSet blacklist;
@@ -178,7 +193,7 @@ void ShareUserGroupWidget::searchForSharees()
         blacklist << sw->share()->getShareWith();
     }
     _ui->errorLabel->hide();
-    _completerModel->fetch(_ui->shareeLineEdit->text(), blacklist);
+    _completerModel->fetch(_ui->shareeLineEdit->text(), blacklist, lookupMode);
 }
 
 void ShareUserGroupWidget::getShares()
@@ -208,12 +223,12 @@ void ShareUserGroupWidget::slotSharesFetched(const QList<QSharedPointer<Share>> 
         }
 
         // the owner of the file that shared it first
-		// leave out if it's the current user
+        // leave out if it's the current user
         if(x == 0 && !share->getUidOwner().isEmpty() && !(share->getUidOwner() == _account->credentials()->user())) {
             _ui->mainOwnerLabel->setText(QString("Shared with you by ").append(share->getOwnerDisplayName()));
         }
 
-        ShareUserLine *s = new ShareUserLine(share, _maxSharingPermissions, _isFile, _parentScrollArea);
+        auto *s = new ShareUserLine(share, _maxSharingPermissions, _isFile, _parentScrollArea);
         connect(s, &ShareUserLine::resizeRequested, this, &ShareUserGroupWidget::slotAdjustScrollWidgetSize);
         connect(s, &ShareUserLine::visualDeletionDone, this, &ShareUserGroupWidget::getShares);
         s->setBackgroundRole(layout->count() % 2 == 0 ? QPalette::Base : QPalette::AlternateBase);
@@ -246,7 +261,7 @@ void ShareUserGroupWidget::slotSharesFetched(const QList<QSharedPointer<Share>> 
     scrollArea->setWidget(newViewPort);
 
     _disableCompleterActivated = false;
-    _ui->shareeLineEdit->setEnabled(true);
+    activateShareeLineEdit();
 }
 
 void ShareUserGroupWidget::slotAdjustScrollWidgetSize()
@@ -275,11 +290,14 @@ void ShareUserGroupWidget::slotPrivateLinkShare()
 
 void ShareUserGroupWidget::slotShareesReady()
 {
+    activateShareeLineEdit();
+
     _pi_sharee.stopAnimation();
     if (_completerModel->rowCount() == 0) {
         displayError(0, tr("No results for '%1'").arg(_completerModel->currentSearch()));
-        return;
     }
+
+    // if no rows are present in the model - complete() will hide the completer
     _completer->complete();
 }
 
@@ -320,7 +338,8 @@ void ShareUserGroupWidget::slotCompleterActivated(const QModelIndex &index)
     } else {
 
         // Default permissions on creation
-        int permissions = SharePermissionRead | SharePermissionUpdate;
+        int permissions = SharePermissionCreate | SharePermissionUpdate
+                | SharePermissionDelete | SharePermissionShare;
         _manager->createShare(_sharePath, Share::ShareType(sharee->type()),
             sharee->shareWith(), SharePermission(permissions));
     }
@@ -348,7 +367,7 @@ void ShareUserGroupWidget::displayError(int code, const QString &message)
     qCWarning(lcSharing) << "Sharing error from server" << code << message;
     _ui->errorLabel->setText(message);
     _ui->errorLabel->show();
-    _ui->shareeLineEdit->setEnabled(true);
+    activateShareeLineEdit();
 }
 
 void ShareUserGroupWidget::slotPrivateLinkOpenBrowser()
@@ -388,6 +407,12 @@ void ShareUserGroupWidget::customizeStyle()
     }
 }
 
+void ShareUserGroupWidget::activateShareeLineEdit()
+{
+    _ui->shareeLineEdit->setEnabled(true);
+    _ui->shareeLineEdit->setFocus();
+}
+
 ShareUserLine::ShareUserLine(QSharedPointer<Share> share,
     SharePermissions maxSharingPermissions,
     bool isFile,
@@ -411,7 +436,7 @@ ShareUserLine::ShareUserLine(QSharedPointer<Share> share,
     connect(_ui->permissionsEdit, &QAbstractButton::clicked, this, &ShareUserLine::slotEditPermissionsChanged);
 
     // create menu with checkable permissions
-    QMenu *menu = new QMenu(this);
+    auto *menu = new QMenu(this);
     _permissionReshare= new QAction(tr("Can reshare"), this);
     _permissionReshare->setCheckable(true);
     _permissionReshare->setEnabled(maxSharingPermissions & SharePermissionShare);
@@ -518,7 +543,7 @@ void ShareUserLine::loadAvatar()
      * Currently only regular users can have avatars.
      */
     if (_share->getShareWith()->type() == Sharee::User) {
-        AvatarJob *job = new AvatarJob(_share->account(), _share->getShareWith()->shareWith(), avatarSize, this);
+        auto *job = new AvatarJob(_share->account(), _share->getShareWith()->shareWith(), avatarSize, this);
         connect(job, &AvatarJob::avatarPixmap, this, &ShareUserLine::slotAvatarLoaded);
         job->start();
     }
@@ -623,7 +648,7 @@ void ShareUserLine::slotDeleteAnimationFinished()
 
 void ShareUserLine::slotShareDeleted()
 {
-    QPropertyAnimation *animation = new QPropertyAnimation(this, "maximumHeight", this);
+    auto *animation = new QPropertyAnimation(this, "maximumHeight", this);
 
     animation->setDuration(500);
     animation->setStartValue(height());

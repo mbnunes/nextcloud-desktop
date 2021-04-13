@@ -14,6 +14,7 @@
 
 #include <QtCore>
 #include <QAbstractListModel>
+#include <QDesktopServices>
 #include <QWidget>
 #include <QJsonObject>
 #include <QJsonDocument>
@@ -21,9 +22,12 @@
 #include "account.h"
 #include "accountstate.h"
 #include "accountmanager.h"
+#include "conflictdialog.h"
 #include "folderman.h"
 #include "iconjob.h"
 #include "accessmanager.h"
+#include "owncloudgui.h"
+#include "guiutility.h"
 
 #include "ActivityData.h"
 #include "ActivityListModel.h"
@@ -35,7 +39,7 @@ namespace OCC {
 Q_LOGGING_CATEGORY(lcActivity, "nextcloud.gui.activity", QtInfoMsg)
 
 ActivityListModel::ActivityListModel(AccountState *accountState, QObject *parent)
-    : QAbstractListModel()
+    : QAbstractListModel(parent)
     , _accountState(accountState)
 {
 }
@@ -43,13 +47,15 @@ ActivityListModel::ActivityListModel(AccountState *accountState, QObject *parent
 QHash<int, QByteArray> ActivityListModel::roleNames() const
 {
     QHash<int, QByteArray> roles;
-    roles[DisplayPathRole] = "displaypath";
+    roles[DisplayPathRole] = "displayPath";
     roles[PathRole] = "path";
+    roles[AbsolutePathRole] = "absolutePath";
     roles[LinkRole] = "link";
     roles[MessageRole] = "message";
     roles[ActionRole] = "type";
     roles[ActionIconRole] = "icon";
     roles[ActionTextRole] = "subject";
+    roles[ActionsLinksRole] = "links";
     roles[ActionTextColorRole] = "activityTextTitleColor";
     roles[ObjectTypeRole] = "objectType";
     roles[PointInTimeRole] = "dateTime";
@@ -67,7 +73,6 @@ QVariant ActivityListModel::data(const QModelIndex &index, int role) const
     AccountStatePtr ast = AccountManager::instance()->account(a._accName);
     if (!ast && _accountState != ast.data())
         return QVariant();
-    QStringList list;
 
     switch (role) {
     case DisplayPathRole:
@@ -77,8 +82,8 @@ QVariant ActivityListModel::data(const QModelIndex &index, int role) const
             if (folder) {
                 relPath.prepend(folder->remotePath());
             }
-            list = FolderMan::instance()->findFileInLocalFolders(relPath, ast->account());
-            if (list.count() > 0) {
+            const auto localFiles = FolderMan::instance()->findFileInLocalFolders(relPath, ast->account());
+            if (localFiles.count() > 0) {
                 if (relPath.startsWith('/') || relPath.startsWith('\\')) {
                     return relPath.remove(0, 1);
                 } else {
@@ -89,30 +94,56 @@ QVariant ActivityListModel::data(const QModelIndex &index, int role) const
         return QString();
     case PathRole:
         if (!a._file.isEmpty()) {
-            auto folder = FolderMan::instance()->folder(a._folder);
+            const auto folder = FolderMan::instance()->folder(a._folder);
+
             QString relPath(a._file);
-            if (folder)
+            if (folder) {
                 relPath.prepend(folder->remotePath());
-            list = FolderMan::instance()->findFileInLocalFolders(relPath, ast->account());
-            if (list.count() > 0) {
-                QString path = "file:///" + QString(list.at(0));
-                return QUrl(path);
             }
-            // File does not exist anymore? Let's try to open its path
-            if (QFileInfo(relPath).exists()) {
-                list = FolderMan::instance()->findFileInLocalFolders(QFileInfo(relPath).path(), ast->account());
-                if (list.count() > 0) {
-                    return QVariant(list.at(0));
+
+            // get relative path to the file so we can open it in the file manager
+            const auto localFiles = FolderMan::instance()->findFileInLocalFolders(QFileInfo(relPath).path(), ast->account());
+
+            if (localFiles.isEmpty()) {
+                return QString();
+            }
+
+            // If this is an E2EE file or folder, pretend we got no path, this leads to
+            // hiding the share button which is what we want
+            if (folder) {
+                SyncJournalFileRecord rec;
+                folder->journalDb()->getFileRecord(a._file.mid(1), &rec);
+                if (rec.isValid() && (rec._isE2eEncrypted || !rec._e2eMangledName.isEmpty())) {
+                    return QString();
                 }
             }
+
+            return QUrl::fromLocalFile(localFiles.constFirst());
         }
         return QString();
+    case AbsolutePathRole: {
+        const auto folder = FolderMan::instance()->folder(a._folder);
+        QString relPath(a._file);
+        if (!a._file.isEmpty()) {
+            if (folder) {
+                relPath.prepend(folder->remotePath());
+            }
+            const auto localFiles = FolderMan::instance()->findFileInLocalFolders(relPath, ast->account());
+            if (!localFiles.empty()) {
+                return localFiles.constFirst();
+            } else {
+                qWarning("File not local folders while processing absolute path request.");
+                return QString();
+            }
+        } else {
+            qWarning("Received an absolute path request for an activity without a file path.");
+            return QString();
+        }
+    }
     case ActionsLinksRole: {
         QList<QVariant> customList;
-        foreach (ActivityLink customItem, a._links) {
-            QVariant customVariant;
-            customVariant.setValue(customItem);
-            customList << customVariant;
+        foreach (ActivityLink activityLink, a._links) {
+            customList << QVariant::fromValue(activityLink);
         }
         return customList;
     }
@@ -147,7 +178,7 @@ QVariant ActivityListModel::data(const QModelIndex &index, int role) const
         } else {
             // We have an activity
             if (!a._iconData.isEmpty()) {
-                QString svgData = "data:image/svg+xml;utf8," + a._iconData;
+                const QString svgData = "data:image/svg+xml;utf8," + a._iconData;
                 return svgData;
             }
             return "qrc:///client/theme/black/activity.svg";
@@ -174,9 +205,6 @@ QVariant ActivityListModel::data(const QModelIndex &index, int role) const
     case ActionTextColorRole:
         return a._id == -1 ? QLatin1String("#808080") : QLatin1String("#222");   // FIXME: This is a temporary workaround for _showMoreActivitiesAvailableEntry
     case MessageRole:
-        if (a._message.isEmpty()) {
-            return QString("No description available.");
-        }
         return a._message;
     case LinkRole: {
         if (a._link.isEmpty()) {
@@ -221,7 +249,7 @@ void ActivityListModel::startFetchJob()
     if (!_accountState->isConnected()) {
         return;
     }
-    JsonApiJob *job = new JsonApiJob(_accountState->account(), QLatin1String("ocs/v2.php/apps/activity/api/v2/activity"), this);
+    auto *job = new JsonApiJob(_accountState->account(), QLatin1String("ocs/v2.php/apps/activity/api/v2/activity"), this);
     QObject::connect(job, &JsonApiJob::jsonReceived,
         this, &ActivityListModel::slotActivitiesReceived);
 
@@ -271,7 +299,7 @@ void ActivityListModel::slotActivitiesReceived(const QJsonDocument &json, int st
         a._icon = json.value("icon").toString();
 
         if (!a._icon.isEmpty()) {
-            IconJob *iconJob = new IconJob(QUrl(a._icon));
+            auto *iconJob = new IconJob(QUrl(a._icon));
             iconJob->setProperty("activityId", a._id);
             connect(iconJob, &IconJob::jobFinished, this, &ActivityListModel::slotIconDownloaded);
         }
@@ -319,7 +347,7 @@ void ActivityListModel::addIgnoredFileToList(Activity newActivity)
     bool duplicate = false;
     if (_listOfIgnoredFiles.size() == 0) {
         _notificationIgnoredFiles = newActivity;
-        _notificationIgnoredFiles._subject = tr("Files from the ignore list as well as symbolic links are not synced. This includes:");
+        _notificationIgnoredFiles._subject = tr("Files from the ignore list as well as symbolic links are not synced.");
         _listOfIgnoredFiles.append(newActivity);
         return;
     }
@@ -389,6 +417,81 @@ void ActivityListModel::removeActivityFromActivityList(Activity activity)
         qCInfo(lcActivity) << "Updating Activity/Notification/Error view.";
         combineActivityLists();
     }
+}
+
+void ActivityListModel::triggerDefaultAction(int activityIndex)
+{
+    if (activityIndex < 0 || activityIndex >= _finalList.size()) {
+        qCWarning(lcActivity) << "Couldn't trigger default action at index" << activityIndex << "/ final list size:" << _finalList.size();
+        return;
+    }
+
+    const auto modelIndex = index(activityIndex);
+    const auto path = data(modelIndex, PathRole).toUrl();
+
+    const auto activity = _finalList.at(activityIndex);
+    if (activity._status == SyncFileItem::Conflict) {
+        Q_ASSERT(!activity._file.isEmpty());
+        Q_ASSERT(!activity._folder.isEmpty());
+        Q_ASSERT(Utility::isConflictFile(activity._file));
+
+        const auto folder = FolderMan::instance()->folder(activity._folder);
+
+        const auto conflictedRelativePath = activity._file;
+        const auto baseRelativePath = folder->journalDb()->conflictFileBaseName(conflictedRelativePath.toUtf8());
+
+        const auto dir = QDir(folder->path());
+        const auto conflictedPath = dir.filePath(conflictedRelativePath);
+        const auto basePath = dir.filePath(baseRelativePath);
+
+        const auto baseName = QFileInfo(basePath).fileName();
+
+        if (!_currentConflictDialog.isNull()) {
+            _currentConflictDialog->close();
+        }
+        _currentConflictDialog = new ConflictDialog;
+        _currentConflictDialog->setBaseFilename(baseName);
+        _currentConflictDialog->setLocalVersionFilename(conflictedPath);
+        _currentConflictDialog->setRemoteVersionFilename(basePath);
+        _currentConflictDialog->setAttribute(Qt::WA_DeleteOnClose);
+        connect(_currentConflictDialog, &ConflictDialog::accepted, folder, [folder]() {
+            folder->scheduleThisFolderSoon();
+        });
+        _currentConflictDialog->open();
+        ownCloudGui::raiseDialog(_currentConflictDialog);
+        return;
+    }
+
+    if (path.isValid()) {
+        QDesktopServices::openUrl(path);
+    } else {
+        const auto link = data(modelIndex, LinkRole).toUrl();
+        Utility::openBrowser(link);
+    }
+}
+
+void ActivityListModel::triggerAction(int activityIndex, int actionIndex)
+{
+    if (activityIndex < 0 || activityIndex >= _finalList.size()) {
+        qCWarning(lcActivity) << "Couldn't trigger action on activity at index" << activityIndex << "/ final list size:" << _finalList.size();
+        return;
+    }
+
+    const auto activity = _finalList[activityIndex];
+
+    if (actionIndex < 0 || actionIndex >= activity._links.size()) {
+        qCWarning(lcActivity) << "Couldn't trigger action at index" << actionIndex << "/ actions list size:" << activity._links.size();
+        return;
+    }
+
+    const auto action = activity._links[actionIndex];
+
+    if (action._verb == "WEB") {
+        Utility::openBrowser(QUrl(action._link));
+        return;
+    }
+
+    emit sendNotificationRequest(activity._accName, action._link, action._verb, activityIndex);
 }
 
 void ActivityListModel::combineActivityLists()

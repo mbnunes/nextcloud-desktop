@@ -25,97 +25,74 @@
 #include <fcntl.h>
 #include <stdio.h>
 
+#include <memory>
+
 #include "windows.h"
 
 #include "c_private.h"
 #include "c_lib.h"
-#include "c_utf8.h"
-#include "csync_util.h"
-#include "csync_vio.h"
-
+#include "csync.h"
 #include "vio/csync_vio_local.h"
+#include "common/filesystembase.h"
 
-Q_LOGGING_CATEGORY(lcCSyncVIOLocal, "sync.csync.vio_local", QtInfoMsg)
+#include <QtCore/QLoggingCategory>
+
+#include "common/vfs.h"
+
+Q_LOGGING_CATEGORY(lcCSyncVIOLocal, "nextcloud.sync.csync.vio_local", QtInfoMsg)
 
 /*
  * directory functions
  */
 
-typedef struct dhandle_s {
+struct csync_vio_handle_t {
   WIN32_FIND_DATA ffd;
   HANDLE hFind;
   int firstFind;
-  mbchar_t *path; // Always ends with '\'
-} dhandle_t;
+  QString path; // Always ends with '\'
+};
 
-static int _csync_vio_local_stat_mb(const mbchar_t *uri, csync_file_stat_t *buf);
+static int _csync_vio_local_stat_mb(const QString &path, csync_file_stat_t *buf);
 
-csync_vio_handle_t *csync_vio_local_opendir(const char *name) {
-  dhandle_t *handle = NULL;
-  mbchar_t *dirname = NULL;
+csync_vio_handle_t *csync_vio_local_opendir(const QString &name) {
 
-  handle = (dhandle_t*)c_malloc(sizeof(dhandle_t));
+    QScopedPointer<csync_vio_handle_t> handle(new csync_vio_handle_t{});
 
-  // the file wildcard has to be attached
-  size_t len_name = strlen(name);
-  if( len_name ) {
-      char *h = NULL;
+    // the file wildcard has to be attached
+    QString dirname = OCC::FileSystem::longWinPath(name + QLatin1String("/*"));
 
-      // alloc an enough large buffer to take the name + '/*' + the closing zero.
-      h = (char*)c_malloc(len_name+3);
-      strncpy( h, name, 1+len_name);
-      strncat(h, "/*", 2);
+    handle->hFind = FindFirstFile(reinterpret_cast<const wchar_t *>(dirname.utf16()), &(handle->ffd));
 
-      dirname = c_utf8_path_to_locale(h);
-      SAFE_FREE(h);
-  }
+    if (handle->hFind == INVALID_HANDLE_VALUE) {
+        int retcode = GetLastError();
+        if( retcode == ERROR_FILE_NOT_FOUND ) {
+            errno = ENOENT;
+        } else {
+            errno = EACCES;
+        }
+        return nullptr;
+    }
 
-  if( dirname ) {
-      handle->hFind = FindFirstFile(dirname, &(handle->ffd));
-  }
+    handle->firstFind = 1; // Set a flag that there first fileinfo is available.
 
-  if (!dirname || handle->hFind == INVALID_HANDLE_VALUE) {
-      c_free_locale_string(dirname);
-      int retcode = GetLastError();
-      if( retcode == ERROR_FILE_NOT_FOUND ) {
-          errno = ENOENT;
-      } else {
-          errno = EACCES;
-      }
-      SAFE_FREE(handle);
-      return NULL;
-  }
-
-  handle->firstFind = 1; // Set a flag that there first fileinfo is available.
-
-  dirname[std::wcslen(dirname) - 1] = L'\0'; // remove the *
-  handle->path = dirname;
-
-  return (csync_vio_handle_t *) handle;
+    dirname.chop(1); // remove the *
+    handle->path = std::move(dirname);
+    return handle.take();
 }
 
 int csync_vio_local_closedir(csync_vio_handle_t *dhandle) {
-  dhandle_t *handle = NULL;
-  int rc = -1;
+    Q_ASSERT(dhandle);
+    int rc = -1;
 
-  if (dhandle == NULL) {
-    errno = EBADF;
-    return -1;
-  }
-
-  handle = (dhandle_t *) dhandle;
-  // FindClose returns non-zero on success
-  if( FindClose(handle->hFind) != 0 ) {
-      rc = 0;
-  } else {
-      // error case, set errno
-      errno = EBADF;
-  }
-
-  c_free_locale_string(handle->path);
-  SAFE_FREE(handle);
-
-  return rc;
+    // FindClose returns non-zero on success
+    if( FindClose(dhandle->hFind) != 0 ) {
+        rc = 0;
+    } else {
+        // error case, set errno
+        errno = EBADF;
+    }
+    delete dhandle;
+    return rc;
 }
 
 
@@ -137,13 +114,10 @@ static time_t FileTimeToUnixTime(FILETIME *filetime, DWORD *remainder)
     }
 }
 
-std::unique_ptr<csync_file_stat_t> csync_vio_local_readdir(csync_vio_handle_t *dhandle) {
+std::unique_ptr<csync_file_stat_t> csync_vio_local_readdir(csync_vio_handle_t *handle, OCC::Vfs *vfs) {
 
-  dhandle_t *handle = NULL;
   std::unique_ptr<csync_file_stat_t> file_stat;
   DWORD rem;
-
-  handle = (dhandle_t *) dhandle;
 
   errno = 0;
 
@@ -162,14 +136,16 @@ std::unique_ptr<csync_file_stat_t> csync_vio_local_readdir(csync_vio_handle_t *d
           return nullptr;
       }
   }
-  auto path = c_utf8_from_locale(handle->ffd.cFileName);
-  if (path == "." || path == "..")
-      return csync_vio_local_readdir(dhandle);
+  auto path = QString::fromWCharArray(handle->ffd.cFileName);
+  if (path == QLatin1String(".") || path == QLatin1String(".."))
+      return csync_vio_local_readdir(handle, vfs);
 
-  file_stat.reset(new csync_file_stat_t);
-  file_stat->path = path;
+  file_stat = std::make_unique<csync_file_stat_t>();
+  file_stat->path = path.toUtf8();
 
-  if (handle->ffd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
+    if (vfs && vfs->statTypeVirtualFile(file_stat.get(), &handle->ffd)) {
+      // all good
+    } else if (handle->ffd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
       // Detect symlinks, and treat junctions as symlinks too.
       if (handle->ffd.dwReserved0 == IO_REPARSE_TAG_SYMLINK
           || handle->ffd.dwReserved0 == IO_REPARSE_TAG_MOUNT_POINT) {
@@ -187,7 +163,8 @@ std::unique_ptr<csync_file_stat_t> csync_vio_local_readdir(csync_vio_handle_t *d
     } else if (handle->ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
         file_stat->type = ItemTypeDirectory;
     } else {
-        file_stat->type = ItemTypeFile;
+        // exclude ".lnk" files as they are not essential, but, causing troubles when enabling the VFS due to QFileInfo::isDir() and other methods are freezing, which causes the ".lnk" files to start hydrating and freezing the app eventually.
+        file_stat->type = !OCC::FileSystem::isLnkFile(path) ? ItemTypeFile : ItemTypeSoftLink;
     }
 
     /* Check for the hidden flag */
@@ -198,12 +175,12 @@ std::unique_ptr<csync_file_stat_t> csync_vio_local_readdir(csync_vio_handle_t *d
     file_stat->size = (handle->ffd.nFileSizeHigh * ((int64_t)(MAXDWORD)+1)) + handle->ffd.nFileSizeLow;
     file_stat->modtime = FileTimeToUnixTime(&handle->ffd.ftLastWriteTime, &rem);
 
-    std::wstring fullPath;
-    fullPath.reserve(std::wcslen(handle->path) + std::wcslen(handle->ffd.cFileName));
+    QString fullPath;
+    fullPath.reserve(handle->path.size() + std::wcslen(handle->ffd.cFileName));
     fullPath += handle->path; // path always ends with '\', by construction
-    fullPath += handle->ffd.cFileName;
+    fullPath += QString::fromWCharArray(handle->ffd.cFileName);
 
-    if (_csync_vio_local_stat_mb(fullPath.data(), file_stat.get()) < 0) {
+    if (_csync_vio_local_stat_mb(fullPath, file_stat.get()) < 0) {
         // Will get excluded by _csync_detect_update.
         file_stat->type = ItemTypeSkip;
     }
@@ -212,15 +189,13 @@ std::unique_ptr<csync_file_stat_t> csync_vio_local_readdir(csync_vio_handle_t *d
 }
 
 
-int csync_vio_local_stat(const char *uri, csync_file_stat_t *buf)
+int csync_vio_local_stat(const QString &uri, csync_file_stat_t *buf)
 {
-    mbchar_t *wuri = c_utf8_path_to_locale(uri);
-    int rc = _csync_vio_local_stat_mb(wuri, buf);
-    c_free_locale_string(wuri);
+    int rc = _csync_vio_local_stat_mb(uri, buf);
     return rc;
 }
 
-static int _csync_vio_local_stat_mb(const mbchar_t *wuri, csync_file_stat_t *buf)
+static int _csync_vio_local_stat_mb(const QString &path, csync_file_stat_t *buf)
 {
     /* Almost nothing to do since csync_vio_local_readdir already filled up most of the information
        But we still need to fetch the file ID.
@@ -231,18 +206,20 @@ static int _csync_vio_local_stat_mb(const mbchar_t *wuri, csync_file_stat_t *buf
     BY_HANDLE_FILE_INFORMATION fileInfo;
     ULARGE_INTEGER FileIndex;
 
-    h = CreateFileW( wuri, 0, FILE_SHARE_WRITE | FILE_SHARE_READ | FILE_SHARE_DELETE,
-                     NULL, OPEN_EXISTING,
+    const auto longPath = OCC::FileSystem::longWinPath(path);
+
+    h = CreateFileW(longPath.toStdWString().data(), 0, FILE_SHARE_WRITE | FILE_SHARE_READ | FILE_SHARE_DELETE,
+                     nullptr, OPEN_EXISTING,
                      FILE_ATTRIBUTE_NORMAL | FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
-                     NULL );
+                     nullptr );
     if( h == INVALID_HANDLE_VALUE ) {
-        qCCritical(lcCSyncVIOLocal, "CreateFileW failed on %ls", wuri);
+        qCCritical(lcCSyncVIOLocal) << "CreateFileW failed on" << longPath;
         errno = GetLastError();
         return -1;
     }
 
     if(!GetFileInformationByHandle( h, &fileInfo ) ) {
-        qCCritical(lcCSyncVIOLocal, "GetFileInformationByHandle failed on %ls", wuri);
+        qCCritical(lcCSyncVIOLocal) << "GetFileInformationByHandle failed on" << longPath;
         errno = GetLastError();
         CloseHandle(h);
         return -1;

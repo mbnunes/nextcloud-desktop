@@ -45,7 +45,7 @@ public:
 
     QString authType() const override;
     QString user() const override;
-    QString password() const;
+    QString password() const override;
     QNetworkAccessManager *createQNAM() const override;
 
     bool ready() const override;
@@ -119,12 +119,11 @@ protected:
     QSslCertificate _clientSslCertificate;
     QList<QSslCertificate> _clientSslCaCertificates;
 
-    bool _ready;
-    bool _credentialsValid;
-    bool _keychainMigration;
-    bool _retryOnKeyChainError = true; // true if we haven't done yet any reading from keychain
+    bool _ready = false;
+    bool _credentialsValid = false;
+    bool _keychainMigration = false;
 
-    WebFlowCredentialsDialog *_askDialog;
+    WebFlowCredentialsDialog *_askDialog = nullptr;
 };
 
 } // namespace OCC

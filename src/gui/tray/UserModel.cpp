@@ -3,10 +3,13 @@
 
 #include "accountmanager.h"
 #include "owncloudgui.h"
+#include <pushnotifications.h>
 #include "syncengine.h"
 #include "ocsjob.h"
 #include "configfile.h"
 #include "notificationconfirmjob.h"
+#include "logger.h"
+#include "guiutility.h"
 
 #include <QDesktopServices>
 #include <QIcon>
@@ -39,9 +42,20 @@ User::User(AccountStatePtr &account, const bool &isCurrent, QObject *parent)
         this, &User::slotRefresh);
 
     connect(_account.data(), &AccountState::stateChanged,
-            [=]() { if (isConnected()) {slotRefresh();} });
+            [=]() { if (isConnected()) {slotRefreshImmediately();} });
+    connect(_account.data(), &AccountState::stateChanged, this, &User::accountStateChanged);
     connect(_account.data(), &AccountState::hasFetchedNavigationApps,
         this, &User::slotRebuildNavigationAppList);
+    connect(_account->account().data(), &Account::accountChangedDisplayName, this, &User::nameChanged);
+
+    connect(FolderMan::instance(), &FolderMan::folderListChanged, this, &User::hasLocalFolderChanged);
+
+    connect(this, &User::guiLog, Logger::instance(), &Logger::guiLog);
+
+    connect(_account->account().data(), &Account::accountChangedAvatar, this, &User::avatarChanged);
+    connect(_account.data(), &AccountState::statusChanged, this, &User::statusChanged);
+
+    connect(_activityModel, &ActivityListModel::sendNotificationRequest, this, &User::slotSendNotificationRequest);
 }
 
 void User::slotBuildNotificationDisplay(const ActivityList &list)
@@ -74,7 +88,7 @@ void User::slotBuildNotificationDisplay(const ActivityList &list)
 
             // Assemble a tray notification for the NEW notification
             ConfigFile cfg;
-            if (cfg.optionalServerNotifications()) {
+            if (cfg.optionalServerNotifications() && isDesktopNotificationsAllowed()) {
                 if (AccountManager::instance()->accounts().count() == 1) {
                     emit guiLog(activity._subject, "");
                 } else {
@@ -94,19 +108,92 @@ void User::slotBuildNotificationDisplay(const ActivityList &list)
 
 void User::setNotificationRefreshInterval(std::chrono::milliseconds interval)
 {
-    qCDebug(lcActivity) << "Starting Notification refresh timer with " << interval.count() / 1000 << " sec interval";
-    _notificationCheckTimer.start(interval.count());
+    if (!checkPushNotificationsAreReady()) {
+        qCDebug(lcActivity) << "Starting Notification refresh timer with " << interval.count() / 1000 << " sec interval";
+        _notificationCheckTimer.start(interval.count());
+    }
+}
+
+void User::slotPushNotificationsReady()
+{
+    qCInfo(lcActivity) << "Push notifications are ready";
+
+    if (_notificationCheckTimer.isActive()) {
+        // as we are now able to use push notifications - let's stop the polling timer
+        _notificationCheckTimer.stop();
+    }
+
+    connectPushNotifications();
+}
+
+void User::slotDisconnectPushNotifications()
+{
+    disconnect(_account->account()->pushNotifications(), &PushNotifications::notificationsChanged, this, &User::slotReceivedPushNotification);
+    disconnect(_account->account()->pushNotifications(), &PushNotifications::activitiesChanged, this, &User::slotReceivedPushActivity);
+
+    disconnect(_account->account().data(), &Account::pushNotificationsDisabled, this, &User::slotDisconnectPushNotifications);
+
+    // connection to WebSocket may have dropped or an error occured, so we need to bring back the polling until we have re-established the connection
+    setNotificationRefreshInterval(ConfigFile().notificationRefreshInterval());
+}
+
+void User::slotReceivedPushNotification(Account *account)
+{
+    if (account->id() == _account->account()->id()) {
+        slotRefreshNotifications();
+    }
+}
+
+void User::slotReceivedPushActivity(Account *account)
+{
+    if (account->id() == _account->account()->id()) {
+        slotRefreshActivities();
+    }
+}
+
+void User::connectPushNotifications() const
+{
+    connect(_account->account().data(), &Account::pushNotificationsDisabled, this, &User::slotDisconnectPushNotifications, Qt::UniqueConnection);
+
+    connect(_account->account()->pushNotifications(), &PushNotifications::notificationsChanged, this, &User::slotReceivedPushNotification, Qt::UniqueConnection);
+    connect(_account->account()->pushNotifications(), &PushNotifications::activitiesChanged, this, &User::slotReceivedPushActivity, Qt::UniqueConnection);
+}
+
+bool User::checkPushNotificationsAreReady() const
+{
+    const auto pushNotifications = _account->account()->pushNotifications();
+
+    const auto pushActivitiesAvailable = _account->account()->capabilities().availablePushNotifications() & PushNotificationType::Activities;
+    const auto pushNotificationsAvailable = _account->account()->capabilities().availablePushNotifications() & PushNotificationType::Notifications;
+
+    const auto pushActivitiesAndNotificationsAvailable = pushActivitiesAvailable && pushNotificationsAvailable;
+
+    if (pushActivitiesAndNotificationsAvailable && pushNotifications && pushNotifications->isReady()) {
+        connectPushNotifications();
+        return true;
+    } else {
+        connect(_account->account().data(), &Account::pushNotificationsReady, this, &User::slotPushNotificationsReady, Qt::UniqueConnection);
+        return false;
+    }
 }
 
 void User::slotRefreshImmediately() {
     if (_account.data() && _account.data()->isConnected()) {
-        this->slotRefreshActivities();
+        slotRefreshActivities();
     }
-    this->slotRefreshNotifications();
+    slotRefreshNotifications();
 }
 
 void User::slotRefresh()
 {
+    slotRefreshUserStatus();
+    
+    if (checkPushNotificationsAreReady()) {
+        // we are relying on WebSocket push notifications - ignore refresh attempts from UI
+        _timeSinceLastCheck[_account.data()].invalidate();
+        return;
+    }
+
     // QElapsedTimer isn't actually constructed as invalid.
     if (!_timeSinceLastCheck.contains(_account.data())) {
         _timeSinceLastCheck[_account.data()].invalidate();
@@ -120,9 +207,9 @@ void User::slotRefresh()
     }
     if (_account.data() && _account.data()->isConnected()) {
         if (!timer.isValid()) {
-            this->slotRefreshActivities();
+            slotRefreshActivities();
         }
-        this->slotRefreshNotifications();
+        slotRefreshNotifications();
         timer.start();
     }
 }
@@ -132,12 +219,20 @@ void User::slotRefreshActivities()
     _activityModel->slotRefreshActivity();
 }
 
+void User::slotRefreshUserStatus() 
+{
+    // TODO: check for _account->account()->capabilities().userStatus() 
+    if (_account.data() && _account.data()->isConnected()) {
+        _account.data()->fetchUserStatus();
+    }
+}
+
 void User::slotRefreshNotifications()
 {
     // start a server notification handler if no notification requests
     // are running
     if (_notificationRequestsRunning == 0) {
-        ServerNotificationHandler *snh = new ServerNotificationHandler(_account.data());
+        auto *snh = new ServerNotificationHandler(_account.data());
         connect(snh, &ServerNotificationHandler::newNotificationList,
             this, &User::slotBuildNotificationDisplay);
 
@@ -149,6 +244,7 @@ void User::slotRefreshNotifications()
 
 void User::slotRebuildNavigationAppList()
 {
+    emit serverHasTalkChanged();
     // Rebuild App list
     UserAppsModel::instance()->buildAppList();
 }
@@ -185,7 +281,7 @@ void User::slotSendNotificationRequest(const QString &accountName, const QString
     if (validVerbs.contains(verb)) {
         AccountStatePtr acc = AccountManager::instance()->account(accountName);
         if (acc) {
-            NotificationConfirmJob *job = new NotificationConfirmJob(acc->account());
+            auto *job = new NotificationConfirmJob(acc->account());
             QUrl l(link);
             job->setLinkAndVerb(l, verb);
             job->setProperty("activityRow", QVariant::fromValue(row));
@@ -206,7 +302,7 @@ void User::slotSendNotificationRequest(const QString &accountName, const QString
 
 void User::slotNotifyNetworkError(QNetworkReply *reply)
 {
-    NotificationConfirmJob *job = qobject_cast<NotificationConfirmJob *>(sender());
+    auto *job = qobject_cast<NotificationConfirmJob *>(sender());
     if (!job) {
         return;
     }
@@ -219,7 +315,7 @@ void User::slotNotifyNetworkError(QNetworkReply *reply)
 
 void User::slotNotifyServerFinished(const QString &reply, int replyCode)
 {
-    NotificationConfirmJob *job = qobject_cast<NotificationConfirmJob *>(sender());
+    auto *job = qobject_cast<NotificationConfirmJob *>(sender());
     if (!job) {
         return;
     }
@@ -319,13 +415,24 @@ void User::slotAddError(const QString &folderAlias, const QString &message, Erro
             link._label = tr("Retry all uploads");
             link._link = folderInstance->path();
             link._verb = "";
-            link._isPrimary = true;
+            link._primary = true;
             activity._links.append(link);
         }
 
         // add 'other errors' to activity list
         _activityModel->addErrorToActivityList(activity);
     }
+}
+
+bool User::isActivityOfCurrentAccount(const Folder *folder) const
+{
+    return folder->accountState() == _account.data();
+}
+
+bool User::isUnsolvableConflict(const SyncFileItemPtr &item) const
+{
+    // We just care about conflict issues that we are able to resolve
+    return item->_status == SyncFileItem::Conflict && !Utility::isConflictFile(item->_file);
 }
 
 void User::slotItemCompleted(const QString &folder, const SyncFileItemPtr &item)
@@ -335,56 +442,62 @@ void User::slotItemCompleted(const QString &folder, const SyncFileItemPtr &item)
     if (!folderInstance)
         return;
 
-    // check if we are adding it to the right account and if it is useful information (protocol errors)
-    if (folderInstance->accountState() == _account.data()) {
-        qCWarning(lcActivity) << "Item " << item->_file << " retrieved resulted in " << item->_errorString;
+    if (!isActivityOfCurrentAccount(folderInstance)) {
+        return;
+    }
 
-        Activity activity;
-        activity._type = Activity::SyncFileItemType; //client activity
-        activity._status = item->_status;
-        activity._dateTime = QDateTime::currentDateTime();
-        activity._message = item->_originalFile;
-        activity._link = folderInstance->accountState()->account()->url();
-        activity._accName = folderInstance->accountState()->account()->displayName();
-        activity._file = item->_file;
-        activity._folder = folder;
-        activity._fileAction = "";
+    if (isUnsolvableConflict(item)) {
+        return;
+    }
 
-        if (item->_instruction == CSYNC_INSTRUCTION_REMOVE) {
-            activity._fileAction = "file_deleted";
-        } else if (item->_instruction == CSYNC_INSTRUCTION_NEW) {
-            activity._fileAction = "file_created";
-        } else if (item->_instruction == CSYNC_INSTRUCTION_RENAME) {
-            activity._fileAction = "file_renamed";
+    qCWarning(lcActivity) << "Item " << item->_file << " retrieved resulted in " << item->_errorString;
+
+    Activity activity;
+    activity._type = Activity::SyncFileItemType; //client activity
+    activity._status = item->_status;
+    activity._dateTime = QDateTime::currentDateTime();
+    activity._message = item->_originalFile;
+    activity._link = folderInstance->accountState()->account()->url();
+    activity._accName = folderInstance->accountState()->account()->displayName();
+    activity._file = item->_file;
+    activity._folder = folder;
+    activity._fileAction = "";
+
+    if (item->_instruction == CSYNC_INSTRUCTION_REMOVE) {
+        activity._fileAction = "file_deleted";
+    } else if (item->_instruction == CSYNC_INSTRUCTION_NEW) {
+        activity._fileAction = "file_created";
+    } else if (item->_instruction == CSYNC_INSTRUCTION_RENAME) {
+        activity._fileAction = "file_renamed";
+    } else {
+        activity._fileAction = "file_changed";
+    }
+
+    if (item->_status == SyncFileItem::NoStatus || item->_status == SyncFileItem::Success) {
+        qCWarning(lcActivity) << "Item " << item->_file << " retrieved successfully.";
+
+        if (item->_direction != SyncFileItem::Up) {
+            activity._message = tr("Synced %1").arg(item->_originalFile);
+        } else if (activity._fileAction == "file_renamed") {
+            activity._message = tr("You renamed %1").arg(item->_originalFile);
+        } else if (activity._fileAction == "file_deleted") {
+            activity._message = tr("You deleted %1").arg(item->_originalFile);
+        } else if (activity._fileAction == "file_created") {
+            activity._message = tr("You created %1").arg(item->_originalFile);
         } else {
-            activity._fileAction = "file_changed";
+            activity._message = tr("You changed %1").arg(item->_originalFile);
         }
 
+        _activityModel->addSyncFileItemToActivityList(activity);
+    } else {
+        qCWarning(lcActivity) << "Item " << item->_file << " retrieved resulted in error " << item->_errorString;
+        activity._subject = item->_errorString;
 
-        if (item->_status == SyncFileItem::NoStatus || item->_status == SyncFileItem::Success) {
-            qCWarning(lcActivity) << "Item " << item->_file << " retrieved successfully.";
-            
-            if (activity._fileAction == "file_renamed") {
-                activity._message.prepend(tr("You renamed") + " ");
-            } else if (activity._fileAction == "file_deleted") {
-                activity._message.prepend(tr("You deleted") + " ");
-            } else if (activity._fileAction == "file_created") {
-                activity._message.prepend(tr("You created") + " ");
-            } else {
-                activity._message.prepend(tr("You changed") + " ");
-            }
-
-            _activityModel->addSyncFileItemToActivityList(activity);
+        if (item->_status == SyncFileItem::Status::FileIgnored) {
+            _activityModel->addIgnoredFileToList(activity);
         } else {
-            qCWarning(lcActivity) << "Item " << item->_file << " retrieved resulted in error " << item->_errorString;
-            activity._subject = item->_errorString;
-
-            if (item->_status == SyncFileItem::Status::FileIgnored) {
-                _activityModel->addIgnoredFileToList(activity);
-            } else {
-                // add 'protocol error' to activity list
-                _activityModel->addErrorToActivityList(activity);
-            }
+            // add 'protocol error' to activity list
+            _activityModel->addErrorToActivityList(activity);
         }
     }
 }
@@ -399,7 +512,7 @@ void User::setCurrentUser(const bool &isCurrent)
     _isCurrentUser = isCurrent;
 }
 
-Folder *User::getFolder()
+Folder *User::getFolder() const
 {
     foreach (Folder *folder, FolderMan::instance()->map()) {
         if (folder->accountState() == _account.data()) {
@@ -417,12 +530,11 @@ ActivityListModel *User::getActivityModel()
 
 void User::openLocalFolder()
 {
-#ifdef Q_OS_WIN
-    QString path = "file:///" + this->getFolder()->path();
-#else
-    QString path = "file://" + this->getFolder()->path();
-#endif
-    QDesktopServices::openUrl(path);
+    const auto folder = getFolder();
+
+    if (folder) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(folder->path()));
+    }
 }
 
 void User::login() const
@@ -456,26 +568,48 @@ QString User::server(bool shortened) const
     return serverUrl;
 }
 
-QImage User::avatar(bool whiteBg) const
+UserStatus::Status User::status() const
 {
-    QImage img = AvatarJob::makeCircularAvatar(_account->account()->avatar());
-    if (img.isNull()) {
-        QImage image(128, 128, QImage::Format_ARGB32);
-        image.fill(Qt::GlobalColor::transparent);
-        QPainter painter(&image);
+    return _account->status();
+}
 
-        QSvgRenderer renderer(QString(whiteBg ? ":/client/theme/black/user.svg" : ":/client/theme/white/user.svg"));
-        renderer.render(&painter);
+QString User::statusMessage() const
+{
+    return _account->statusMessage();
+}
 
-        return image;
-    } else {
-        return img;
+QUrl User::statusIcon() const
+{
+    return _account->statusIcon();
+}
+
+QImage User::avatar() const
+{
+    return AvatarJob::makeCircularAvatar(_account->account()->avatar());
+}
+
+QString User::avatarUrl() const
+{
+    if (avatar().isNull()) {
+        return QString();
     }
+
+    return QStringLiteral("image://avatars/") + _account->account()->id();
+}
+
+bool User::hasLocalFolder() const
+{
+    return getFolder() != nullptr;
 }
 
 bool User::serverHasTalk() const
 {
-    return _account->hasTalk();
+    return talkApp() != nullptr;
+}
+
+AccountApp *User::talkApp() const
+{
+    return _account->findApp(QStringLiteral("spreed"));
 }
 
 bool User::hasActivities() const
@@ -498,6 +632,12 @@ bool User::isConnected() const
     return (_account->connectionStatus() == AccountState::ConnectionStatus::Connected);
 }
 
+
+bool User::isDesktopNotificationsAllowed() const
+{
+    return _account.data()->isDesktopNotificationsAllowed();
+}
+
 void User::removeAccount() const
 {
     AccountManager::instance()->deleteAccount(_account.data());
@@ -510,7 +650,7 @@ UserModel *UserModel::_instance = nullptr;
 
 UserModel *UserModel::instance()
 {
-    if (_instance == nullptr) {
+    if (!_instance) {
         _instance = new UserModel();
     }
     return _instance;
@@ -518,7 +658,6 @@ UserModel *UserModel::instance()
 
 UserModel::UserModel(QObject *parent)
     : QAbstractListModel(parent)
-    , _currentUserId()
 {
     // TODO: Remember selected user from last quit via settings file
     if (AccountManager::instance()->accounts().size() > 0) {
@@ -537,6 +676,7 @@ void UserModel::buildUserList()
     }
     if (_init) {
         _users.first()->setCurrentUser(true);
+        connect(_users.first(), &User::accountStateChanged, this, &UserModel::refreshCurrentUserGui);
         _init = false;
     }
 }
@@ -546,84 +686,76 @@ Q_INVOKABLE int UserModel::numUsers()
     return _users.size();
 }
 
-Q_INVOKABLE int UserModel::currentUserId()
+Q_INVOKABLE int UserModel::currentUserId() const
 {
     return _currentUserId;
 }
 
 Q_INVOKABLE bool UserModel::isUserConnected(const int &id)
 {
-    if (!_users.isEmpty()) {
-        return _users[id]->isConnected();
-    } else {
+    if (id < 0 || id >= _users.size())
         return false;
-    }
 
+    return _users[id]->isConnected();
 }
 
-Q_INVOKABLE QImage UserModel::currentUserAvatar()
+Q_INVOKABLE QUrl UserModel::statusIcon(int id)
 {
-    if (_users.count() >= 1) {
-        return _users[_currentUserId]->avatar();
-    } else {
-        QImage image(128, 128, QImage::Format_ARGB32);
-        image.fill(Qt::GlobalColor::transparent);
-        QPainter painter(&image);
-        QSvgRenderer renderer(QString(":/client/theme/white/user.svg"));
-        renderer.render(&painter);
-
-        return image;
+    if (id < 0 || id >= _users.size()) {
+        return {};
     }
+
+    return _users[id]->statusIcon();
 }
+
 
 QImage UserModel::avatarById(const int &id)
 {
-    return _users[id]->avatar(true);
-}
+    if (id < 0 || id >= _users.size())
+        return {};
 
-Q_INVOKABLE QString UserModel::currentUserName()
-{
-    if (_users.count() >= 1) {
-        return _users[_currentUserId]->name();
-    } else {
-        return QString("No users");
-    }
+    return _users[id]->avatar();
 }
 
 Q_INVOKABLE QString UserModel::currentUserServer()
 {
-    if (_users.count() >= 1) {
-        return _users[_currentUserId]->server();
-    } else {
-        return QString("");
-    }
-}
+    if (_currentUserId < 0 || _currentUserId >= _users.size())
+        return {};
 
-Q_INVOKABLE bool UserModel::currentServerHasTalk()
-{
-    if (_users.count() >= 1) {
-        return _users[_currentUserId]->serverHasTalk();
-    } else {
-        return false;
-    }
+    return _users[_currentUserId]->server();
 }
 
 void UserModel::addUser(AccountStatePtr &user, const bool &isCurrent)
 {
     bool containsUser = false;
-    for (int i = 0; i < _users.size(); i++) {
-        if (_users[i]->account() == user->account()) {
+    for (const auto &u : qAsConst(_users)) {
+        if (u->account() == user->account()) {
             containsUser = true;
             continue;
         }
     }
 
     if (!containsUser) {
-        beginInsertRows(QModelIndex(), rowCount(), rowCount());
-        _users << new User(user, isCurrent);
+        int row = rowCount();
+        beginInsertRows(QModelIndex(), row, row);
+
+        User *u = new User(user, isCurrent);
+
+        connect(u, &User::avatarChanged, this, [this, row] {
+           emit dataChanged(index(row, 0), index(row, 0), {UserModel::AvatarRole});
+        });
+
+        connect(u, &User::statusChanged, this, [this, row] {
+            emit dataChanged(index(row, 0), index(row, 0), {UserModel::StatusIconRole, 
+                                                            UserModel::StatusMessageRole});
+        });
+
+        _users << u;
         if (isCurrent) {
             _currentUserId = _users.indexOf(_users.last());
+            connect(u, &User::accountStateChanged, this, &UserModel::refreshCurrentUserGui);
         }
+
         endInsertRows();
         ConfigFile cfg;
         _users.last()->setNotificationRefreshInterval(cfg.notificationRefreshInterval());
@@ -638,35 +770,47 @@ int UserModel::currentUserIndex()
 
 Q_INVOKABLE void UserModel::openCurrentAccountLocalFolder()
 {
+    if (_currentUserId < 0 || _currentUserId >= _users.size())
+        return;
+
     _users[_currentUserId]->openLocalFolder();
 }
 
 Q_INVOKABLE void UserModel::openCurrentAccountTalk()
 {
-    QString url = _users[_currentUserId]->server(false) + "/apps/spreed";
-    if (!(url.contains("http://") || url.contains("https://"))) {
-        url = "https://" + _users[_currentUserId]->server(false) + "/apps/spreed";
+    if (!currentUser())
+        return;
+
+    const auto talkApp = currentUser()->talkApp();
+    if (talkApp) {
+        Utility::openBrowser(talkApp->url());
+    } else {
+        qCWarning(lcActivity) << "The Talk app is not enabled on" << currentUser()->server();
     }
-    QDesktopServices::openUrl(QUrl(url));
 }
 
 Q_INVOKABLE void UserModel::openCurrentAccountServer()
 {
-    // Don't open this URL when the QML appMenu pops up on click (see Window.qml)
-    if(appList().count() > 0)
+    if (_currentUserId < 0 || _currentUserId >= _users.size())
         return;
 
     QString url = _users[_currentUserId]->server(false);
-    if (!(url.contains("http://") || url.contains("https://"))) {
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
         url = "https://" + _users[_currentUserId]->server(false);
     }
-    QDesktopServices::openUrl(QUrl(url));
+
+    QDesktopServices::openUrl(url);
 }
 
 Q_INVOKABLE void UserModel::switchCurrentUser(const int &id)
 {
+    if (_currentUserId < 0 || _currentUserId >= _users.size())
+        return;
+
+    disconnect(_users[_currentUserId], &User::accountStateChanged, this, &UserModel::refreshCurrentUserGui);
     _users[_currentUserId]->setCurrentUser(false);
     _users[id]->setCurrentUser(true);
+    connect(_users[id], &User::accountStateChanged, this, &UserModel::refreshCurrentUserGui);
     _currentUserId = id;
     emit refreshCurrentUserGui();
     emit newUserSelected();
@@ -674,18 +818,27 @@ Q_INVOKABLE void UserModel::switchCurrentUser(const int &id)
 
 Q_INVOKABLE void UserModel::login(const int &id)
 {
+    if (id < 0 || id >= _users.size())
+        return;
+
     _users[id]->login();
     emit refreshCurrentUserGui();
 }
 
 Q_INVOKABLE void UserModel::logout(const int &id)
 {
+    if (id < 0 || id >= _users.size())
+        return;
+
     _users[id]->logout();
     emit refreshCurrentUserGui();
 }
 
 Q_INVOKABLE void UserModel::removeAccount(const int &id)
 {
+    if (id < 0 || id >= _users.size())
+        return;
+
     QMessageBox messageBox(QMessageBox::Question,
         tr("Confirm Account Removal"),
         tr("<p>Do you really want to remove the connection to the account <i>%1</i>?</p>"
@@ -699,6 +852,10 @@ Q_INVOKABLE void UserModel::removeAccount(const int &id)
     messageBox.exec();
     if (messageBox.clickedButton() != yesButton) {
         return;
+    }
+
+    if (_users[id]->isCurrentUser()) {
+        disconnect(_users[id], &User::accountStateChanged, this, &UserModel::refreshCurrentUserGui);
     }
 
     if (_users[id]->isCurrentUser() && _users.count() > 1) {
@@ -731,8 +888,12 @@ QVariant UserModel::data(const QModelIndex &index, int role) const
         return _users[index.row()]->name();
     } else if (role == ServerRole) {
         return _users[index.row()]->server();
+    } else if (role == StatusIconRole) {
+        return _users[index.row()]->statusIcon();
+    } else if (role == StatusMessageRole) {
+        return _users[index.row()]->statusMessage();
     } else if (role == AvatarRole) {
-        return _users[index.row()]->avatar();
+        return _users[index.row()]->avatarUrl();
     } else if (role == IsCurrentUserRole) {
         return _users[index.row()]->isCurrentUser();
     } else if (role == IsConnectedRole) {
@@ -748,6 +909,8 @@ QHash<int, QByteArray> UserModel::roleNames() const
     QHash<int, QByteArray> roles;
     roles[NameRole] = "name";
     roles[ServerRole] = "server";
+    roles[StatusIconRole] = "statusIcon";
+    roles[StatusMessageRole] = "statusMessage";
     roles[AvatarRole] = "avatar";
     roles[IsCurrentUserRole] = "isCurrentUser";
     roles[IsConnectedRole] = "isConnected";
@@ -757,26 +920,64 @@ QHash<int, QByteArray> UserModel::roleNames() const
 
 ActivityListModel *UserModel::currentActivityModel()
 {
+    if (currentUserIndex() < 0 || currentUserIndex() >= _users.size())
+        return nullptr;
+
     return _users[currentUserIndex()]->getActivityModel();
 }
 
 bool UserModel::currentUserHasActivities()
 {
+    if (currentUserIndex() < 0 || currentUserIndex() >= _users.size())
+        return false;
+
     return _users[currentUserIndex()]->hasActivities();
+}
+
+bool UserModel::currentUserHasLocalFolder()
+{
+    if (currentUserIndex() < 0 || currentUserIndex() >= _users.size())
+        return false;
+
+    return _users[currentUserIndex()]->getFolder() != nullptr;
 }
 
 void UserModel::fetchCurrentActivityModel()
 {
+    if (currentUserId() < 0 || currentUserId() >= _users.size())
+        return;
+
     _users[currentUserId()]->slotRefresh();
 }
 
 AccountAppList UserModel::appList() const
 {
-    if (_users.count() > 0) {
-        return _users[_currentUserId]->appList();
-    } else {
-        return AccountAppList();
+    if (_currentUserId < 0 || _currentUserId >= _users.size())
+        return {};
+
+    return _users[_currentUserId]->appList();
+}
+
+User *UserModel::currentUser() const
+{
+    if (currentUserId() < 0 || currentUserId() >= _users.size())
+        return nullptr;
+
+    return _users[currentUserId()];
+}
+
+int UserModel::findUserIdForAccount(AccountState *account) const
+{
+    const auto it = std::find_if(std::cbegin(_users), std::cend(_users), [=](const User *user) {
+        return user->account()->id() == account->account()->id();
+    });
+
+    if (it == std::cend(_users)) {
+        return -1;
     }
+
+    const auto id = std::distance(std::cbegin(_users), it);
+    return id;
 }
 
 /*-------------------------------------------------------------------------------------*/
@@ -791,12 +992,25 @@ QImage ImageProvider::requestImage(const QString &id, QSize *size, const QSize &
     Q_UNUSED(size)
     Q_UNUSED(requestedSize)
 
-    if (id == "currentUser") {
-        return UserModel::instance()->currentUserAvatar();
-    } else {
-        int uid = id.toInt();
-        return UserModel::instance()->avatarById(uid);
+    const auto makeIcon = [](const QString &path) {
+        QImage image(128, 128, QImage::Format_ARGB32);
+        image.fill(Qt::GlobalColor::transparent);
+        QPainter painter(&image);
+        QSvgRenderer renderer(path);
+        renderer.render(&painter);
+        return image;
+    };
+
+    if (id == QLatin1String("fallbackWhite")) {
+        return makeIcon(QStringLiteral(":/client/theme/white/user.svg"));
     }
+
+    if (id == QLatin1String("fallbackBlack")) {
+        return makeIcon(QStringLiteral(":/client/theme/black/user.svg"));
+    }
+
+    const int uid = id.toInt();
+    return UserModel::instance()->avatarById(uid);
 }
 
 /*-------------------------------------------------------------------------------------*/
@@ -805,7 +1019,7 @@ UserAppsModel *UserAppsModel::_instance = nullptr;
 
 UserAppsModel *UserAppsModel::instance()
 {
-    if (_instance == nullptr) {
+    if (!_instance) {
         _instance = new UserAppsModel();
     }
     return _instance;
@@ -824,10 +1038,11 @@ void UserAppsModel::buildAppList()
         endRemoveRows();
     }
 
-    if(UserModel::instance()->appList().count() > 0) {
-        foreach(AccountApp *app, UserModel::instance()->appList()) {
+    if (UserModel::instance()->appList().count() > 0) {
+        const auto talkApp = UserModel::instance()->currentUser()->talkApp();
+        foreach (AccountApp *app, UserModel::instance()->appList()) {
             // Filter out Talk because we have a dedicated button for it
-            if(app->id() == QLatin1String("spreed"))
+            if (talkApp && app->id() == talkApp->id())
                 continue;
 
             beginInsertRows(QModelIndex(), rowCount(), rowCount());
@@ -839,7 +1054,7 @@ void UserAppsModel::buildAppList()
 
 void UserAppsModel::openAppUrl(const QUrl &url)
 {
-    QDesktopServices::openUrl(url);
+    Utility::openBrowser(url);
 }
 
 int UserAppsModel::rowCount(const QModelIndex &parent) const

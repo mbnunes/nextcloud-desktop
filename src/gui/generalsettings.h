@@ -48,10 +48,12 @@ private slots:
     void slotToggleOptionalServerNotifications(bool);
     void slotShowInExplorerNavigationPane(bool);
     void slotIgnoreFilesEditor();
+    void slotCreateDebugArchive();
     void loadMiscSettings();
     void slotShowLegalNotice();
 #if defined(BUILD_UPDATER)
     void slotUpdateInfo();
+    void slotUpdateChannelChanged(const QString &channel);
     void slotUpdateCheckNow();
     void slotToggleAutoUpdateCheck();
 #endif
@@ -61,8 +63,7 @@ private:
 
     Ui::GeneralSettings *_ui;
     QPointer<IgnoreListEditor> _ignoreEditor;
-    QPointer<SyncLogDialog> _syncLogDialog;
-    bool _currentlyLoading;
+    bool _currentlyLoading = false;
 };
 
 

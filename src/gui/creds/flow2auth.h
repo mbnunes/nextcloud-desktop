@@ -1,6 +1,6 @@
 /*
  * Copyright (C) by Olivier Goffart <ogoffart@woboq.com>
- * Copyright (C) by Michael Schuster <michael@nextcloud.com>
+ * Copyright (C) by Michael Schuster <michael@schuster.ms>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -77,8 +77,8 @@ private:
     QString _pollToken;
     QString _pollEndpoint;
     QTimer _pollTimer;
-    int _secondsLeft;
-    int _secondsInterval;
+    qint64 _secondsLeft;
+    qint64 _secondsInterval;
     bool _isBusy;
     bool _hasToken;
 };

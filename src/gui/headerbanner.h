@@ -1,5 +1,5 @@
 /*
- * Copyright (C) by Michael Schuster <michael@nextcloud.com>
+ * Copyright (C) by Michael Schuster <michael@schuster.ms>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -73,7 +73,7 @@ class HeaderBanner : public QWidget
 {
     Q_OBJECT
 public:
-    HeaderBanner(QWidget *parent = 0);
+    HeaderBanner(QWidget *parent = nullptr);
 
     void setup(const QString &title, const QPixmap &logo, const QPixmap &banner,
                const Qt::TextFormat titleFormat, const QString &styleSheet);
